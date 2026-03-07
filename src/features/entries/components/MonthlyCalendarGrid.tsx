@@ -20,10 +20,17 @@ const weekdayLabelsMonday = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const weekdayLabelsSunday = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 const typeDotClassName = {
-  shift: "bg-blue-500",
-  holiday: "bg-emerald-500",
-  leave: "bg-orange-500",
-  off: "bg-slate-400",
+  shift: "bg-blue-100",
+  holiday: "bg-emerald-100",
+  leave: "bg-orange-100",
+  off: "bg-slate-200",
+};
+
+const entryTileClassName = {
+  shift: "border-blue-500 bg-gradient-to-br from-blue-600 to-sky-500 text-white hover:border-blue-400",
+  holiday: "border-emerald-500 bg-gradient-to-br from-emerald-500 to-lime-500 text-white hover:border-emerald-400",
+  leave: "border-orange-500 bg-gradient-to-br from-orange-500 to-rose-500 text-white hover:border-orange-400",
+  off: "border-slate-500 bg-gradient-to-br from-slate-500 to-slate-400 text-white hover:border-slate-400",
 };
 
 export function MonthlyCalendarGrid({
@@ -62,8 +69,14 @@ export function MonthlyCalendarGrid({
         {displayedDays.map((day) => {
           const key = toDateKey(day);
           const entry = entriesByDate.get(key);
+          const entryType = entry?.type ?? null;
           const isSelected = selectedDate === key;
           const isCurrentMonth = day.getMonth() === monthIndex;
+          const hasEntry = Boolean(entry);
+          const timeRange = entry?.type === "shift" ? formatTimeRange(entry.startTime, entry.endTime, timeFormat) : null;
+          const [startTimeLabel, endTimeLabel] = timeRange?.includes(" - ")
+            ? (timeRange.split(" - ", 2) as [string, string])
+            : [timeRange ?? "", ""];
 
           return (
             <button
@@ -71,12 +84,16 @@ export function MonthlyCalendarGrid({
               type="button"
               onClick={() => onSelectDate(key)}
               className={cn(
-                "relative min-h-[74px] rounded-xl border px-2 py-2 text-left transition hover:border-blue-300",
-                isSelected ? "border-blue-500 bg-blue-50" : "border-slate-200 bg-white",
+                "relative min-h-[86px] rounded-xl border px-2 py-2 text-left transition md:min-h-[92px]",
+                entryType ? entryTileClassName[entryType] : "border-slate-200 bg-white hover:border-blue-300",
+                isSelected && hasEntry && "ring-2 ring-white/80 shadow-[0_0_0_1px_rgba(255,255,255,0.25)]",
+                isSelected && !hasEntry && "border-blue-500 bg-blue-50",
                 !isCurrentMonth && "opacity-45",
               )}
             >
-              <span className="text-sm font-bold text-slate-700">{format(day, "d")}</span>
+              <span className={cn("text-sm font-bold", hasEntry ? "text-white" : "text-slate-700")}>
+                {format(day, "d")}
+              </span>
               {entry ? (
                 <>
                   <span
@@ -85,10 +102,11 @@ export function MonthlyCalendarGrid({
                       typeDotClassName[entry.type],
                     )}
                   />
-                  <p className="mt-3 truncate text-[11px] font-semibold text-slate-700">{entry.title}</p>
+                  <p className="mt-3 truncate text-[11px] font-semibold text-white">{entry.title}</p>
                   {entry.type === "shift" ? (
-                    <p className="mt-0.5 truncate text-[10px] font-semibold text-slate-500">
-                      {formatTimeRange(entry.startTime, entry.endTime, timeFormat)}
+                    <p className="mt-0.5 whitespace-normal text-[10px] font-semibold leading-tight text-white/90">
+                      <span className="block">{startTimeLabel}</span>
+                      {endTimeLabel ? <span className="block">{endTimeLabel}</span> : null}
                     </p>
                   ) : null}
                 </>

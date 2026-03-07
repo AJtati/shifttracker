@@ -566,3 +566,31 @@ export async function getNextShift(uid: string, fromDate: string): Promise<RotaE
     throw toFirebaseAppError(error, "Unable to load upcoming shift.");
   }
 }
+
+export async function getUpcomingShiftEntries(
+  uid: string,
+  fromDate: string,
+  maxResults: number = 80,
+): Promise<RotaEntry[]> {
+  try {
+    const snapshot = await runFirestoreRead(
+      () =>
+        getDocs(
+          query(
+            entryCollection(uid),
+            where("date", ">=", fromDate),
+            where("type", "==", "shift"),
+            orderBy("date", "asc"),
+            limit(maxResults),
+          ),
+        ),
+      "Unable to load shift reminders.",
+    );
+
+    return snapshot.docs
+      .map((entryDoc) => toRotaEntry(entryDoc.id, entryDoc.data()))
+      .sort(sortByDateAndStartTimeAsc);
+  } catch (error) {
+    throw toFirebaseAppError(error, "Unable to load shift reminders.");
+  }
+}

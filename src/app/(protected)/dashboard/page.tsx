@@ -1,7 +1,7 @@
 "use client";
 
-import { addDays } from "date-fns";
-import { CalendarPlus, ClipboardPlus, Plane } from "lucide-react";
+import { addDays, addMonths } from "date-fns";
+import { CalendarPlus, ChevronLeft, ChevronRight, ClipboardPlus, Plane } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
@@ -11,6 +11,7 @@ import { EntryBadge } from "@/components/common/EntryBadge";
 import { EmptyState } from "@/components/common/EmptyState";
 import { GradientButton } from "@/components/common/GradientButton";
 import { EntryDayRow } from "@/features/entries/components/EntryDayRow";
+import { EntryTypeLegend } from "@/features/entries/components/EntryTypeLegend";
 import { MonthlyCalendarGrid } from "@/features/entries/components/MonthlyCalendarGrid";
 import { useAuth } from "@/features/auth/hooks/useAuth";
 import { usePreferences } from "@/hooks/usePreferences";
@@ -30,13 +31,26 @@ import {
   formatDateLong,
   formatMonthLabel,
   formatTimeRange,
+  formatWeekLabel,
   getMonthBounds,
   getWeekBounds,
   getWeekDays,
+  parseDateKey,
+  shiftWeek,
   toDateKey,
 } from "@/utils/date";
 
 type DashboardScheduleView = "weekly" | "monthly" | "list";
+
+function toMonthInputValue(date: Date): string {
+  const year = date.getFullYear();
+  const month = `${date.getMonth() + 1}`.padStart(2, "0");
+  return `${year}-${month}`;
+}
+
+function isSameMonth(left: Date, right: Date): boolean {
+  return left.getFullYear() === right.getFullYear() && left.getMonth() === right.getMonth();
+}
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -48,6 +62,8 @@ export default function DashboardPage() {
   const [weekEntries, setWeekEntries] = useState<RotaEntry[]>([]);
   const [monthEntries, setMonthEntries] = useState<RotaEntry[]>([]);
   const [listEntries, setListEntries] = useState<RotaEntry[]>([]);
+  const [weekAnchorDate, setWeekAnchorDate] = useState<Date>(() => new Date());
+  const [monthAnchorDate, setMonthAnchorDate] = useState<Date>(() => new Date());
   const [selectedMonthDate, setSelectedMonthDate] = useState(toDateKey(new Date()));
   const [scheduleViewOverride, setScheduleViewOverride] = useState<DashboardScheduleView | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
@@ -56,8 +72,12 @@ export default function DashboardPage() {
   const [scheduleError, setScheduleError] = useState<string | null>(null);
 
   const today = useMemo(() => toDateKey(new Date()), []);
-  const previewMonthDate = useMemo(() => new Date(), []);
-  const monthBounds = useMemo(() => getMonthBounds(previewMonthDate), [previewMonthDate]);
+  const weekBounds = useMemo(
+    () => getWeekBounds(weekAnchorDate, profile?.weekStartsOn ?? "monday"),
+    [profile?.weekStartsOn, weekAnchorDate],
+  );
+  const weekLabel = useMemo(() => formatWeekLabel(parseDateKey(weekBounds.start)), [weekBounds.start]);
+  const monthBounds = useMemo(() => getMonthBounds(monthAnchorDate), [monthAnchorDate]);
   const listRange = useMemo(
     () => ({
       start: today,
@@ -67,8 +87,8 @@ export default function DashboardPage() {
   );
 
   const weekDays = useMemo(
-    () => getWeekDays(new Date(), profile?.weekStartsOn ?? "monday"),
-    [profile?.weekStartsOn],
+    () => getWeekDays(weekAnchorDate, profile?.weekStartsOn ?? "monday"),
+    [profile?.weekStartsOn, weekAnchorDate],
   );
   const preferredScheduleView = useMemo<DashboardScheduleView>(() => {
     if (profile?.defaultView === "monthly" || profile?.defaultView === "list" || profile?.defaultView === "weekly") {
@@ -86,8 +106,29 @@ export default function DashboardPage() {
       timeFormat: profile?.timeFormat ?? DEFAULT_PREFERENCES.timeFormat,
       theme: profile?.theme ?? DEFAULT_PREFERENCES.theme,
       timezone: profile?.timezone ?? DEFAULT_PREFERENCES.timezone,
+      shiftReminderEnabled: profile?.shiftReminderEnabled ?? DEFAULT_PREFERENCES.shiftReminderEnabled,
+      shiftReminderValue: profile?.shiftReminderValue ?? DEFAULT_PREFERENCES.shiftReminderValue,
+      shiftReminderUnit: profile?.shiftReminderUnit ?? DEFAULT_PREFERENCES.shiftReminderUnit,
+      dayBeforeReminderEnabled: profile?.dayBeforeReminderEnabled ?? DEFAULT_PREFERENCES.dayBeforeReminderEnabled,
+      dayBeforeReminderTime: profile?.dayBeforeReminderTime ?? DEFAULT_PREFERENCES.dayBeforeReminderTime,
+      holidayLeaveReminderEnabled:
+        profile?.holidayLeaveReminderEnabled ?? DEFAULT_PREFERENCES.holidayLeaveReminderEnabled,
+      holidayLeaveReminderTime: profile?.holidayLeaveReminderTime ?? DEFAULT_PREFERENCES.holidayLeaveReminderTime,
     }),
-    [profile?.defaultView, profile?.theme, profile?.timeFormat, profile?.timezone, profile?.weekStartsOn],
+    [
+      profile?.dayBeforeReminderEnabled,
+      profile?.dayBeforeReminderTime,
+      profile?.defaultView,
+      profile?.holidayLeaveReminderEnabled,
+      profile?.holidayLeaveReminderTime,
+      profile?.shiftReminderEnabled,
+      profile?.shiftReminderUnit,
+      profile?.shiftReminderValue,
+      profile?.theme,
+      profile?.timeFormat,
+      profile?.timezone,
+      profile?.weekStartsOn,
+    ],
   );
 
   useEffect(() => {
@@ -100,52 +141,32 @@ export default function DashboardPage() {
     }
 
     const loadDashboard = async () => {
-      const weekBounds = getWeekBounds(new Date(), profile?.weekStartsOn ?? "monday");
       setIsSyncing(true);
       setError(null);
 
       try {
         const dashboardErrors: string[] = [];
 
-        const [nextShiftState, weekState] = await Promise.allSettled([
-          getNextShift(user.uid, today),
-          getEntriesByWeek(user.uid, weekBounds.start, weekBounds.end),
-        ]);
+        const nextShiftState = await Promise.allSettled([getNextShift(user.uid, today)]);
 
-        const resolvedNextShift = nextShiftState.status === "fulfilled" ? nextShiftState.value : null;
-        const resolvedWeekEntries = weekState.status === "fulfilled" ? weekState.value : [];
+        const resolvedNextShift = nextShiftState[0].status === "fulfilled" ? nextShiftState[0].value : null;
 
-        if (nextShiftState.status === "rejected") {
-          dashboardErrors.push(toFriendlyFirebaseMessage(nextShiftState.reason, "Unable to load next shift."));
+        if (nextShiftState[0].status === "rejected") {
+          dashboardErrors.push(toFriendlyFirebaseMessage(nextShiftState[0].reason, "Unable to load next shift."));
         }
 
-        if (weekState.status === "rejected") {
-          dashboardErrors.push(toFriendlyFirebaseMessage(weekState.reason, "Unable to load weekly schedule."));
-        }
+        let resolvedTodayEntry: RotaEntry | null = null;
 
-        let resolvedTodayEntry =
-          resolvedWeekEntries
-            .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
-            .find((entry) => entry.date === today && entry.type === "shift") ?? null;
-
-        if (!resolvedTodayEntry) {
-          try {
-            resolvedTodayEntry = await getTodayEntry(user.uid, today);
-          } catch (todayError) {
-            dashboardErrors.push(toFriendlyFirebaseMessage(todayError, "Unable to load today's entry."));
-          }
+        try {
+          resolvedTodayEntry = await getTodayEntry(user.uid, today);
+        } catch (todayError) {
+          dashboardErrors.push(toFriendlyFirebaseMessage(todayError, "Unable to load today's entry."));
         }
 
         setTodayEntry(resolvedTodayEntry);
         setNextShiftEntry(resolvedNextShift);
-        setWeekEntries(resolvedWeekEntries);
 
-        if (
-          dashboardErrors.length > 0 &&
-          !resolvedTodayEntry &&
-          !resolvedNextShift &&
-          resolvedWeekEntries.length === 0
-        ) {
+        if (dashboardErrors.length > 0 && !resolvedTodayEntry && !resolvedNextShift) {
           setError(dashboardErrors[0]);
         }
       } catch (loadError) {
@@ -167,13 +188,10 @@ export default function DashboardPage() {
 
   useEffect(() => {
     if (!user) {
+      setWeekEntries([]);
       setMonthEntries([]);
       setListEntries([]);
       setIsScheduleSyncing(false);
-      return;
-    }
-
-    if (scheduleView === "weekly") {
       return;
     }
 
@@ -182,6 +200,12 @@ export default function DashboardPage() {
       setScheduleError(null);
 
       try {
+        if (scheduleView === "weekly") {
+          const result = await getEntriesByWeek(user.uid, weekBounds.start, weekBounds.end);
+          setWeekEntries(result);
+          return;
+        }
+
         if (scheduleView === "monthly") {
           const result = await getEntriesByMonth(user.uid, monthBounds.start, monthBounds.end);
           setMonthEntries(result);
@@ -194,7 +218,11 @@ export default function DashboardPage() {
         setScheduleError(
           toFriendlyFirebaseMessage(
             loadError,
-            scheduleView === "monthly" ? "Unable to load monthly preview." : "Unable to load list preview.",
+            scheduleView === "weekly"
+              ? "Unable to load weekly preview."
+              : scheduleView === "monthly"
+                ? "Unable to load monthly preview."
+                : "Unable to load list preview.",
           ),
         );
       } finally {
@@ -203,7 +231,16 @@ export default function DashboardPage() {
     };
 
     void loadSchedulePreview();
-  }, [listRange.end, listRange.start, monthBounds.end, monthBounds.start, scheduleView, user]);
+  }, [
+    listRange.end,
+    listRange.start,
+    monthBounds.end,
+    monthBounds.start,
+    scheduleView,
+    user,
+    weekBounds.end,
+    weekBounds.start,
+  ]);
 
   const entriesByDate = useMemo(() => {
     const map = new Map<string, RotaEntry>();
@@ -222,6 +259,21 @@ export default function DashboardPage() {
   }, [monthEntries]);
 
   const selectedMonthEntry = monthEntriesByDate.get(selectedMonthDate);
+  const hasWeekEntries = useMemo(() => weekDays.some((date) => entriesByDate.has(date)), [entriesByDate, weekDays]);
+  const monthInputValue = useMemo(() => toMonthInputValue(monthAnchorDate), [monthAnchorDate]);
+  const viewingCurrentMonth = useMemo(() => isSameMonth(monthAnchorDate, new Date()), [monthAnchorDate]);
+  const viewingCurrentWeek = useMemo(() => {
+    const currentWeekStart = getWeekBounds(new Date(), profile?.weekStartsOn ?? "monday").start;
+    return weekBounds.start === currentWeekStart;
+  }, [profile?.weekStartsOn, weekBounds.start]);
+
+  useEffect(() => {
+    const now = new Date();
+    const defaultDate = isSameMonth(monthAnchorDate, now)
+      ? now
+      : new Date(monthAnchorDate.getFullYear(), monthAnchorDate.getMonth(), 1);
+    setSelectedMonthDate(toDateKey(defaultDate));
+  }, [monthAnchorDate]);
 
   const handleScheduleViewChange = async (nextView: DashboardScheduleView) => {
     if (!user) {
@@ -246,6 +298,42 @@ export default function DashboardPage() {
       setScheduleViewOverride(null);
       pushToast(message, "error");
     }
+  };
+
+  const handlePreviousMonth = () => {
+    setMonthAnchorDate((currentMonth) => addMonths(currentMonth, -1));
+  };
+
+  const handleNextMonth = () => {
+    setMonthAnchorDate((currentMonth) => addMonths(currentMonth, 1));
+  };
+
+  const handleJumpToCurrentMonth = () => {
+    setMonthAnchorDate(new Date());
+  };
+
+  const handleMonthPickerChange = (value: string) => {
+    const [yearText, monthText] = value.split("-");
+    const year = Number(yearText);
+    const month = Number(monthText);
+
+    if (!Number.isInteger(year) || !Number.isInteger(month) || month < 1 || month > 12) {
+      return;
+    }
+
+    setMonthAnchorDate(new Date(year, month - 1, 1));
+  };
+
+  const handlePreviousWeek = () => {
+    setWeekAnchorDate((currentWeek) => shiftWeek(currentWeek, -1));
+  };
+
+  const handleNextWeek = () => {
+    setWeekAnchorDate((currentWeek) => shiftWeek(currentWeek, 1));
+  };
+
+  const handleJumpToCurrentWeek = () => {
+    setWeekAnchorDate(new Date());
   };
 
   return (
@@ -330,61 +418,146 @@ export default function DashboardPage() {
         {scheduleError ? <p className="rounded-xl border border-rose-300 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">{scheduleError}</p> : null}
 
         {scheduleView === "weekly" ? (
-          weekEntries.length === 0 ? (
-            <EmptyState
-              title="No rota added yet"
-              description="Start by creating your first shift entry."
-              actionLabel="Add your first shift"
-            />
-          ) : (
-            weekDays.map((date) => (
-              <EntryDayRow
-                key={date}
-                date={date}
-                entry={entriesByDate.get(date)}
-                timeFormat={profile?.timeFormat ?? "24h"}
-              />
-            ))
-          )
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2 shadow-sm">
+              <button
+                type="button"
+                onClick={handlePreviousWeek}
+                className="grid h-9 w-9 place-items-center rounded-lg border border-slate-200 text-slate-700 transition hover:border-blue-300 hover:text-blue-700"
+                aria-label="Previous week"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+
+              <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-bold text-slate-700">
+                {weekLabel}
+              </div>
+
+              <button
+                type="button"
+                onClick={handleNextWeek}
+                className="grid h-9 w-9 place-items-center rounded-lg border border-slate-200 text-slate-700 transition hover:border-blue-300 hover:text-blue-700"
+                aria-label="Next week"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
+
+              <button
+                type="button"
+                onClick={handleJumpToCurrentWeek}
+                disabled={viewingCurrentWeek}
+                className="ml-auto h-9 rounded-lg border border-slate-200 px-3 text-sm font-semibold text-slate-700 transition hover:border-blue-300 hover:text-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Current week
+              </button>
+            </div>
+
+            <EntryTypeLegend />
+
+            {!hasWeekEntries ? (
+              <p className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-600">
+                No entries this week yet. Tap a day card to add one.
+              </p>
+            ) : null}
+
+            <div className="overflow-x-auto pb-1">
+              <div className="grid min-w-[980px] grid-cols-7 gap-3">
+                {weekDays.map((date) => (
+                  <EntryDayRow
+                    key={date}
+                    date={date}
+                    entry={entriesByDate.get(date)}
+                    timeFormat={profile?.timeFormat ?? "24h"}
+                    layout="card"
+                  />
+                ))}
+              </div>
+            </div>
+          </div>
         ) : null}
 
         {scheduleView === "monthly" ? (
-          <div className="grid gap-4 lg:grid-cols-[1.5fr_1fr]">
-            <MonthlyCalendarGrid
-              monthDate={previewMonthDate}
-              selectedDate={selectedMonthDate}
-              entriesByDate={monthEntriesByDate}
-              weekStartsOn={profile?.weekStartsOn ?? "monday"}
-              timeFormat={profile?.timeFormat ?? "24h"}
-              onSelectDate={setSelectedMonthDate}
-            />
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2 shadow-sm">
+              <button
+                type="button"
+                onClick={handlePreviousMonth}
+                className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-700 transition hover:border-blue-300 hover:text-blue-700"
+                aria-label="Previous month"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
 
-            <aside className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-              <p className="text-xs font-bold uppercase tracking-wide text-slate-500">{formatMonthLabel(previewMonthDate)}</p>
-              <h3 className="mt-1 text-lg font-black text-slate-900">{formatDateLong(selectedMonthDate)}</h3>
+              <input
+                type="month"
+                value={monthInputValue}
+                onChange={(event) => {
+                  handleMonthPickerChange(event.target.value);
+                }}
+                className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-blue-500"
+                aria-label="Choose month"
+              />
 
-              {selectedMonthEntry ? (
-                <div className="mt-4 space-y-3">
-                  <EntryBadge type={selectedMonthEntry.type} />
-                  <p className="text-lg font-black text-slate-900">{selectedMonthEntry.title}</p>
-                  <p className="text-sm font-semibold text-slate-600">
-                    {formatTimeRange(selectedMonthEntry.startTime, selectedMonthEntry.endTime, profile?.timeFormat ?? "24h")}
-                  </p>
-                  <Link href={`/entry/edit?entryId=${selectedMonthEntry.id}`}>
-                    <GradientButton block>Edit Entry</GradientButton>
-                  </Link>
-                </div>
-              ) : (
-                <div className="mt-4">
-                  <EmptyState
-                    title="No entry for this date"
-                    description="Select another date or add a new entry."
-                    actionLabel="Add entry"
-                    actionHref={`/entry/new?date=${selectedMonthDate}`}
-                  />
-                </div>
-              )}
-            </aside>
+              <button
+                type="button"
+                onClick={handleNextMonth}
+                className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-700 transition hover:border-blue-300 hover:text-blue-700"
+                aria-label="Next month"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
+
+              <button
+                type="button"
+                onClick={handleJumpToCurrentMonth}
+                disabled={viewingCurrentMonth}
+                className="ml-auto h-9 rounded-lg border border-slate-200 px-3 text-sm font-semibold text-slate-700 transition hover:border-blue-300 hover:text-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                This month
+              </button>
+
+              <span className="w-full text-xs font-semibold uppercase tracking-wide text-slate-500 sm:ml-2 sm:w-auto">
+                Viewing: {formatMonthLabel(monthAnchorDate)}
+              </span>
+            </div>
+
+            <div className="grid gap-4 lg:grid-cols-[1.5fr_1fr]">
+              <MonthlyCalendarGrid
+                monthDate={monthAnchorDate}
+                selectedDate={selectedMonthDate}
+                entriesByDate={monthEntriesByDate}
+                weekStartsOn={profile?.weekStartsOn ?? "monday"}
+                timeFormat={profile?.timeFormat ?? "24h"}
+                onSelectDate={setSelectedMonthDate}
+              />
+
+              <aside className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+                <p className="text-xs font-bold uppercase tracking-wide text-slate-500">{formatMonthLabel(monthAnchorDate)}</p>
+                <h3 className="mt-1 text-lg font-black text-slate-900">{formatDateLong(selectedMonthDate)}</h3>
+
+                {selectedMonthEntry ? (
+                  <div className="mt-4 space-y-3">
+                    <EntryBadge type={selectedMonthEntry.type} />
+                    <p className="text-lg font-black text-slate-900">{selectedMonthEntry.title}</p>
+                    <p className="text-sm font-semibold text-slate-600">
+                      {formatTimeRange(selectedMonthEntry.startTime, selectedMonthEntry.endTime, profile?.timeFormat ?? "24h")}
+                    </p>
+                    <Link href={`/entry/edit?entryId=${selectedMonthEntry.id}`}>
+                      <GradientButton block>Edit Entry</GradientButton>
+                    </Link>
+                  </div>
+                ) : (
+                  <div className="mt-4">
+                    <EmptyState
+                      title="No entry for this date"
+                      description="Select another date or add a new entry."
+                      actionLabel="Add entry"
+                      actionHref={`/entry/new?date=${selectedMonthDate}`}
+                    />
+                  </div>
+                )}
+              </aside>
+            </div>
           </div>
         ) : null}
 

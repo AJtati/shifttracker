@@ -25,6 +25,18 @@ service cloud.firestore {
       return value == 'light' || value == 'dark';
     }
 
+    function isValidShiftReminderUnit(value) {
+      return value == 'minutes' || value == 'hours';
+    }
+
+    function isValidShiftReminderValue(value) {
+      return value is int && value >= 1 && value <= 10080;
+    }
+
+    function isValidReminderTime(value) {
+      return value is string && value.matches('^([01][0-9]|2[0-3]):[0-5][0-9]$');
+    }
+
     function isValidEntryType(value) {
       return value == 'shift' || value == 'leave' || value == 'holiday' || value == 'off';
     }
@@ -47,6 +59,13 @@ service cloud.firestore {
           'timeFormat',
           'theme',
           'timezone',
+          'shiftReminderEnabled',
+          'shiftReminderValue',
+          'shiftReminderUnit',
+          'dayBeforeReminderEnabled',
+          'dayBeforeReminderTime',
+          'holidayLeaveReminderEnabled',
+          'holidayLeaveReminderTime',
           'createdAt',
           'updatedAt'
         ]) &&
@@ -57,7 +76,14 @@ service cloud.firestore {
         isValidWeekStartsOn(data.weekStartsOn) &&
         isValidTimeFormat(data.timeFormat) &&
         (!data.keys().hasAny(['theme']) || isValidTheme(data.theme)) &&
-        data.timezone is string && data.timezone.size() > 0 && data.timezone.size() <= 100;
+        data.timezone is string && data.timezone.size() > 0 && data.timezone.size() <= 100 &&
+        (!data.keys().hasAny(['shiftReminderEnabled']) || data.shiftReminderEnabled is bool) &&
+        (!data.keys().hasAny(['shiftReminderValue']) || isValidShiftReminderValue(data.shiftReminderValue)) &&
+        (!data.keys().hasAny(['shiftReminderUnit']) || isValidShiftReminderUnit(data.shiftReminderUnit)) &&
+        (!data.keys().hasAny(['dayBeforeReminderEnabled']) || data.dayBeforeReminderEnabled is bool) &&
+        (!data.keys().hasAny(['dayBeforeReminderTime']) || isValidReminderTime(data.dayBeforeReminderTime)) &&
+        (!data.keys().hasAny(['holidayLeaveReminderEnabled']) || data.holidayLeaveReminderEnabled is bool) &&
+        (!data.keys().hasAny(['holidayLeaveReminderTime']) || isValidReminderTime(data.holidayLeaveReminderTime));
     }
 
     function isValidEntryPayload(data) {

@@ -22,6 +22,39 @@ export interface UpdateUserProfileDetailsInput {
   fullName: string;
 }
 
+function isValidTimeValue(value: unknown): value is string {
+  return typeof value === "string" && /^([01][0-9]|2[0-3]):[0-5][0-9]$/.test(value);
+}
+
+function normalizeReminderTime(value: unknown, fallback: string): string {
+  return isValidTimeValue(value) ? value : fallback;
+}
+
+function normalizeShiftReminderValue(value: unknown): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return DEFAULT_PREFERENCES.shiftReminderValue;
+  }
+
+  const roundedValue = Math.round(value);
+  return Math.min(10080, Math.max(1, roundedValue));
+}
+
+function normalizePreferences(preferences: UserPreferences): UserPreferences {
+  return {
+    ...preferences,
+    timezone: preferences.timezone.trim() || DEFAULT_PREFERENCES.timezone,
+    shiftReminderValue: normalizeShiftReminderValue(preferences.shiftReminderValue),
+    dayBeforeReminderTime: normalizeReminderTime(
+      preferences.dayBeforeReminderTime,
+      DEFAULT_PREFERENCES.dayBeforeReminderTime,
+    ),
+    holidayLeaveReminderTime: normalizeReminderTime(
+      preferences.holidayLeaveReminderTime,
+      DEFAULT_PREFERENCES.holidayLeaveReminderTime,
+    ),
+  };
+}
+
 function getDbClient() {
   if (!db) {
     throw new FirebaseConfigError();
@@ -44,6 +77,13 @@ function buildProfile(input: CreateUserProfileInput): UserProfile {
     timeFormat: DEFAULT_PREFERENCES.timeFormat,
     theme: DEFAULT_PREFERENCES.theme,
     timezone: DEFAULT_PREFERENCES.timezone,
+    shiftReminderEnabled: DEFAULT_PREFERENCES.shiftReminderEnabled,
+    shiftReminderValue: DEFAULT_PREFERENCES.shiftReminderValue,
+    shiftReminderUnit: DEFAULT_PREFERENCES.shiftReminderUnit,
+    dayBeforeReminderEnabled: DEFAULT_PREFERENCES.dayBeforeReminderEnabled,
+    dayBeforeReminderTime: DEFAULT_PREFERENCES.dayBeforeReminderTime,
+    holidayLeaveReminderEnabled: DEFAULT_PREFERENCES.holidayLeaveReminderEnabled,
+    holidayLeaveReminderTime: DEFAULT_PREFERENCES.holidayLeaveReminderTime,
   };
 }
 
@@ -61,6 +101,13 @@ function buildFallbackProfile(uid: string): UserProfile {
     timeFormat: DEFAULT_PREFERENCES.timeFormat,
     theme: DEFAULT_PREFERENCES.theme,
     timezone: DEFAULT_PREFERENCES.timezone,
+    shiftReminderEnabled: DEFAULT_PREFERENCES.shiftReminderEnabled,
+    shiftReminderValue: DEFAULT_PREFERENCES.shiftReminderValue,
+    shiftReminderUnit: DEFAULT_PREFERENCES.shiftReminderUnit,
+    dayBeforeReminderEnabled: DEFAULT_PREFERENCES.dayBeforeReminderEnabled,
+    dayBeforeReminderTime: DEFAULT_PREFERENCES.dayBeforeReminderTime,
+    holidayLeaveReminderEnabled: DEFAULT_PREFERENCES.holidayLeaveReminderEnabled,
+    holidayLeaveReminderTime: DEFAULT_PREFERENCES.holidayLeaveReminderTime,
   };
 }
 
@@ -82,6 +129,25 @@ function toUserProfile(uid: string, data: Record<string, unknown>): UserProfile 
     timeFormat: data.timeFormat === "12h" ? "12h" : "24h",
     theme: data.theme === "light" ? "light" : DEFAULT_PREFERENCES.theme,
     timezone: typeof data.timezone === "string" ? data.timezone : DEFAULT_PREFERENCES.timezone,
+    shiftReminderEnabled:
+      typeof data.shiftReminderEnabled === "boolean"
+        ? data.shiftReminderEnabled
+        : DEFAULT_PREFERENCES.shiftReminderEnabled,
+    shiftReminderValue: normalizeShiftReminderValue(data.shiftReminderValue),
+    shiftReminderUnit: data.shiftReminderUnit === "hours" ? "hours" : "minutes",
+    dayBeforeReminderEnabled:
+      typeof data.dayBeforeReminderEnabled === "boolean"
+        ? data.dayBeforeReminderEnabled
+        : DEFAULT_PREFERENCES.dayBeforeReminderEnabled,
+    dayBeforeReminderTime: normalizeReminderTime(data.dayBeforeReminderTime, DEFAULT_PREFERENCES.dayBeforeReminderTime),
+    holidayLeaveReminderEnabled:
+      typeof data.holidayLeaveReminderEnabled === "boolean"
+        ? data.holidayLeaveReminderEnabled
+        : DEFAULT_PREFERENCES.holidayLeaveReminderEnabled,
+    holidayLeaveReminderTime: normalizeReminderTime(
+      data.holidayLeaveReminderTime,
+      DEFAULT_PREFERENCES.holidayLeaveReminderTime,
+    ),
   };
 }
 
@@ -155,10 +221,11 @@ export async function getUserProfile(uid: string): Promise<UserProfile | null> {
 }
 
 export async function updatePreferences(uid: string, preferences: UserPreferences): Promise<void> {
+  const normalizedPreferences = normalizePreferences(preferences);
   const currentProfile = getLocalProfile(uid);
   const now = new Date().toISOString();
   const baseProfile = currentProfile ?? buildFallbackProfile(uid);
-  const nextProfile = { ...baseProfile, ...preferences, updatedAt: now };
+  const nextProfile = { ...baseProfile, ...normalizedPreferences, updatedAt: now };
 
   try {
     const dbClient = getDbClient();
@@ -169,8 +236,8 @@ export async function updatePreferences(uid: string, preferences: UserPreference
         setDoc(
           userRef,
           {
-          ...preferences,
-          updatedAt: serverTimestamp(),
+            ...normalizedPreferences,
+            updatedAt: serverTimestamp(),
           },
           { merge: true },
         ),
@@ -205,8 +272,8 @@ export async function updateUserProfileDetails(
         setDoc(
           userRef,
           {
-          fullName: details.fullName.trim(),
-          updatedAt: serverTimestamp(),
+            fullName: details.fullName.trim(),
+            updatedAt: serverTimestamp(),
           },
           { merge: true },
         ),

@@ -43,6 +43,14 @@ export default function ProfilePage() {
       timeFormat: profile?.timeFormat ?? DEFAULT_PREFERENCES.timeFormat,
       theme: profile?.theme ?? DEFAULT_PREFERENCES.theme,
       timezone: profile?.timezone ?? DEFAULT_PREFERENCES.timezone,
+      shiftReminderEnabled: profile?.shiftReminderEnabled ?? DEFAULT_PREFERENCES.shiftReminderEnabled,
+      shiftReminderValue: profile?.shiftReminderValue ?? DEFAULT_PREFERENCES.shiftReminderValue,
+      shiftReminderUnit: profile?.shiftReminderUnit ?? DEFAULT_PREFERENCES.shiftReminderUnit,
+      dayBeforeReminderEnabled: profile?.dayBeforeReminderEnabled ?? DEFAULT_PREFERENCES.dayBeforeReminderEnabled,
+      dayBeforeReminderTime: profile?.dayBeforeReminderTime ?? DEFAULT_PREFERENCES.dayBeforeReminderTime,
+      holidayLeaveReminderEnabled:
+        profile?.holidayLeaveReminderEnabled ?? DEFAULT_PREFERENCES.holidayLeaveReminderEnabled,
+      holidayLeaveReminderTime: profile?.holidayLeaveReminderTime ?? DEFAULT_PREFERENCES.holidayLeaveReminderTime,
     };
   }, [profile, user]);
 
@@ -87,6 +95,26 @@ export default function ProfilePage() {
           <div className="flex justify-between rounded-xl border border-slate-200 px-3 py-2">
             <dt className="font-semibold text-slate-600">Theme</dt>
             <dd className="font-bold text-slate-800 capitalize">{resolvedProfile.theme}</dd>
+          </div>
+          <div className="flex justify-between rounded-xl border border-slate-200 px-3 py-2">
+            <dt className="font-semibold text-slate-600">Shift reminders</dt>
+            <dd className="font-bold text-slate-800">
+              {resolvedProfile.shiftReminderEnabled
+                ? `${resolvedProfile.shiftReminderValue} ${resolvedProfile.shiftReminderUnit} before`
+                : "Off"}
+            </dd>
+          </div>
+          <div className="flex justify-between rounded-xl border border-slate-200 px-3 py-2">
+            <dt className="font-semibold text-slate-600">Day-before reminder</dt>
+            <dd className="font-bold text-slate-800">
+              {resolvedProfile.dayBeforeReminderEnabled ? resolvedProfile.dayBeforeReminderTime : "Off"}
+            </dd>
+          </div>
+          <div className="flex justify-between rounded-xl border border-slate-200 px-3 py-2">
+            <dt className="font-semibold text-slate-600">Holiday/leave reminder</dt>
+            <dd className="font-bold text-slate-800">
+              {resolvedProfile.holidayLeaveReminderEnabled ? resolvedProfile.holidayLeaveReminderTime : "Off"}
+            </dd>
           </div>
         </dl>
 

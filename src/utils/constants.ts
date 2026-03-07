@@ -1,5 +1,5 @@
 import { EntryType } from "@/types/entry";
-import { DefaultView, ThemePreference, TimeFormat, UserPreferences, WeekStartsOn } from "@/types/user";
+import { DefaultView, ShiftReminderUnit, ThemePreference, TimeFormat, UserPreferences, WeekStartsOn } from "@/types/user";
 
 export const APP_NAME = "ShifTracker";
 
@@ -30,12 +30,20 @@ export const DEFAULT_PREFERENCES: UserPreferences = {
   timeFormat: "24h",
   theme: "dark",
   timezone: "Europe/London",
+  shiftReminderEnabled: false,
+  shiftReminderValue: 15,
+  shiftReminderUnit: "minutes",
+  dayBeforeReminderEnabled: false,
+  dayBeforeReminderTime: "21:00",
+  holidayLeaveReminderEnabled: false,
+  holidayLeaveReminderTime: "09:00",
 };
 
 export const VALID_DEFAULT_VIEWS: DefaultView[] = ["dashboard", "weekly", "monthly", "list"];
 export const VALID_WEEK_STARTS_ON: WeekStartsOn[] = ["monday", "sunday"];
 export const VALID_TIME_FORMATS: TimeFormat[] = ["12h", "24h"];
 export const VALID_THEME_PREFERENCES: ThemePreference[] = ["light", "dark"];
+export const VALID_SHIFT_REMINDER_UNITS: ShiftReminderUnit[] = ["minutes", "hours"];
 
 export const VALID_ENTRY_TYPES: EntryType[] = ["shift", "leave", "holiday", "off"];
 

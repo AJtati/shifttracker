@@ -1,15 +1,19 @@
 "use client";
 
+import { addDays } from "date-fns";
 import { CalendarDays, LayoutDashboard, ListChecks, LogOut, UserCircle2 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect } from "react";
+import { useCallback, useEffect } from "react";
 
 import { AppLogo } from "@/components/common/AppLogo";
 import { FirebaseConfigBanner } from "@/components/common/FirebaseConfigBanner";
 import { useToast } from "@/app/providers/ToastProvider";
 import { useAuth } from "@/features/auth/hooks/useAuth";
+import { getEntriesByRange } from "@/features/entries/services/entryService";
+import { isShiftReminderRuntimeSupported, syncShiftReminderNotifications } from "@/services/notifications/shiftReminderService";
 import { cn } from "@/utils/cn";
+import { toDateKey } from "@/utils/date";
 
 const navigationItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -18,6 +22,7 @@ const navigationItems = [
   { href: "/rota/list", label: "List", icon: ListChecks },
   { href: "/profile", label: "Profile", icon: UserCircle2 },
 ];
+const NOTIFICATION_LOOKAHEAD_DAYS = 120;
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -38,6 +43,67 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       router.prefetch(route);
     });
   }, [router]);
+
+  const syncShiftReminders = useCallback(async () => {
+    if (!user || !profile || !isShiftReminderRuntimeSupported()) {
+      return;
+    }
+
+    try {
+      const reminderPreferences = {
+        shiftReminderEnabled: profile.shiftReminderEnabled,
+        shiftReminderValue: profile.shiftReminderValue,
+        shiftReminderUnit: profile.shiftReminderUnit,
+        dayBeforeReminderEnabled: profile.dayBeforeReminderEnabled,
+        dayBeforeReminderTime: profile.dayBeforeReminderTime,
+        holidayLeaveReminderEnabled: profile.holidayLeaveReminderEnabled,
+        holidayLeaveReminderTime: profile.holidayLeaveReminderTime,
+        timeFormat: profile.timeFormat,
+      };
+
+      const hasReminderEnabled =
+        profile.shiftReminderEnabled || profile.dayBeforeReminderEnabled || profile.holidayLeaveReminderEnabled;
+
+      if (!hasReminderEnabled) {
+        await syncShiftReminderNotifications(user.uid, [], reminderPreferences, displayName);
+        return;
+      }
+
+      const startDate = toDateKey(new Date());
+      const endDate = toDateKey(addDays(new Date(), NOTIFICATION_LOOKAHEAD_DAYS));
+      const upcomingEntries = await getEntriesByRange(user.uid, startDate, endDate);
+      const reminderEntries = upcomingEntries.filter((entry) => entry.type !== "off");
+
+      await syncShiftReminderNotifications(user.uid, reminderEntries, reminderPreferences, displayName);
+    } catch (error) {
+      console.warn("Unable to sync shift reminder notifications.", error);
+    }
+  }, [
+    displayName,
+    profile,
+    user,
+  ]);
+
+  useEffect(() => {
+    void syncShiftReminders();
+  }, [pathname, syncShiftReminders]);
+
+  useEffect(() => {
+    if (typeof document === "undefined") {
+      return;
+    }
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        void syncShiftReminders();
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [syncShiftReminders]);
 
   const handleSignOut = async () => {
     try {

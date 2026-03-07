@@ -2,6 +2,7 @@ export type DefaultView = "dashboard" | "weekly" | "monthly" | "list";
 export type WeekStartsOn = "monday" | "sunday";
 export type TimeFormat = "12h" | "24h";
 export type ThemePreference = "light" | "dark";
+export type ShiftReminderUnit = "minutes" | "hours";
 
 export interface UserProfile {
   uid: string;
@@ -14,6 +15,13 @@ export interface UserProfile {
   timeFormat: TimeFormat;
   theme: ThemePreference;
   timezone: string;
+  shiftReminderEnabled: boolean;
+  shiftReminderValue: number;
+  shiftReminderUnit: ShiftReminderUnit;
+  dayBeforeReminderEnabled: boolean;
+  dayBeforeReminderTime: string;
+  holidayLeaveReminderEnabled: boolean;
+  holidayLeaveReminderTime: string;
 }
 
 export interface UserPreferences {
@@ -22,4 +30,11 @@ export interface UserPreferences {
   timeFormat: TimeFormat;
   theme: ThemePreference;
   timezone: string;
+  shiftReminderEnabled: boolean;
+  shiftReminderValue: number;
+  shiftReminderUnit: ShiftReminderUnit;
+  dayBeforeReminderEnabled: boolean;
+  dayBeforeReminderTime: string;
+  holidayLeaveReminderEnabled: boolean;
+  holidayLeaveReminderTime: string;
 }

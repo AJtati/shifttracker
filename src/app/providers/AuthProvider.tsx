@@ -72,6 +72,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       timeFormat: DEFAULT_PREFERENCES.timeFormat,
       theme: DEFAULT_PREFERENCES.theme,
       timezone: DEFAULT_PREFERENCES.timezone,
+      shiftReminderEnabled: DEFAULT_PREFERENCES.shiftReminderEnabled,
+      shiftReminderValue: DEFAULT_PREFERENCES.shiftReminderValue,
+      shiftReminderUnit: DEFAULT_PREFERENCES.shiftReminderUnit,
+      dayBeforeReminderEnabled: DEFAULT_PREFERENCES.dayBeforeReminderEnabled,
+      dayBeforeReminderTime: DEFAULT_PREFERENCES.dayBeforeReminderTime,
+      holidayLeaveReminderEnabled: DEFAULT_PREFERENCES.holidayLeaveReminderEnabled,
+      holidayLeaveReminderTime: DEFAULT_PREFERENCES.holidayLeaveReminderTime,
     };
   }, []);
 
