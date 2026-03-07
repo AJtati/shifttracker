@@ -5,7 +5,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 
 import { logIn, logOut, resetPassword, signUp, subscribeToAuthChanges } from "@/features/auth/services/authService";
 import { toFriendlyAuthError } from "@/features/auth/utils/errorMessage";
-import { ensureUserProfile, getUserProfile } from "@/features/user/services/userService";
+import { ensureUserProfile, getUserProfile, subscribeToUserProfile } from "@/features/user/services/userService";
 import { hasFirebaseConfig } from "@/services/firebase/client";
 import { isFirestoreSetupError } from "@/services/firebase/errors";
 import { UserProfile } from "@/types/user";
@@ -126,6 +126,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     let active = true;
+    let unsubscribeProfile: (() => void) | null = null;
 
     const hydrateProfile = async (currentUser: User) => {
       try {
@@ -164,6 +165,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
+      if (unsubscribeProfile) {
+        unsubscribeProfile();
+        unsubscribeProfile = null;
+      }
+
       setUser(currentUser);
       setAuthError(null);
       setFirebaseWarning(null);
@@ -177,10 +183,35 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Do not block login/signup UX on Firestore profile bootstrap.
       setIsLoading(false);
       void hydrateProfile(currentUser);
+
+      unsubscribeProfile = subscribeToUserProfile(
+        currentUser.uid,
+        (nextProfile) => {
+          if (!active || !nextProfile) {
+            return;
+          }
+
+          setProfile(nextProfile);
+        },
+        (error) => {
+          if (!active) {
+            return;
+          }
+
+          setFirebaseWarning(
+            isFirestoreSetupError(error)
+              ? "Cloud Firestore is not enabled yet. Cloud data features are unavailable."
+              : "Cloud sync is unavailable right now. Please try again shortly.",
+          );
+        },
+      );
     });
 
     return () => {
       active = false;
+      if (unsubscribeProfile) {
+        unsubscribeProfile();
+      }
       unsubscribe();
     };
   }, [fallbackProfileFromAuth, loadUserProfile]);

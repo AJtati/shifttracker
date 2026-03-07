@@ -1,4 +1,4 @@
-import { doc, getDoc, serverTimestamp, setDoc } from "firebase/firestore";
+import { doc, getDoc, onSnapshot, serverTimestamp, setDoc } from "firebase/firestore";
 
 import { db } from "@/services/firebase/client";
 import {
@@ -284,4 +284,47 @@ export async function updateUserProfileDetails(
   }
 
   setLocalProfile(nextProfile);
+}
+
+export function subscribeToUserProfile(
+  uid: string,
+  onProfile: (profile: UserProfile | null) => void,
+  onError?: (error: unknown) => void,
+): () => void {
+  const localProfile = getLocalProfile(uid);
+
+  if (localProfile) {
+    onProfile(localProfile);
+  }
+
+  try {
+    const dbClient = getDbClient();
+    const userRef = doc(dbClient, "users", uid);
+
+    return onSnapshot(
+      userRef,
+      (snapshot) => {
+        if (!snapshot.exists()) {
+          onProfile(getLocalProfile(uid) ?? null);
+          return;
+        }
+
+        const remoteProfile = toUserProfile(uid, snapshot.data());
+        setLocalProfile(remoteProfile);
+        onProfile(remoteProfile);
+      },
+      (error) => {
+        const fallbackProfile = getLocalProfile(uid);
+
+        if (fallbackProfile) {
+          onProfile(fallbackProfile);
+        }
+
+        onError?.(toFirebaseAppError(error, "Unable to subscribe to user profile updates."));
+      },
+    );
+  } catch (error) {
+    onError?.(toFirebaseAppError(error, "Unable to subscribe to user profile updates."));
+    return () => {};
+  }
 }

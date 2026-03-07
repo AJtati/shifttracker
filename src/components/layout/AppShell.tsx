@@ -30,7 +30,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const { user, profile, signOutUser, hasFirebaseConfig, authError, firebaseWarning, clearAuthError } = useAuth();
   const { pushToast } = useToast();
-  const lastReminderWarningRef = useRef<ShiftReminderSyncResult["status"] | null>(null);
+  const lastReminderWarningRef = useRef<"permission-denied" | "exact-alarm-denied" | null>(null);
 
   const displayName = profile?.fullName ?? user?.displayName ?? user?.email?.split("@")[0] ?? "User";
 
@@ -48,6 +48,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   const handleReminderSyncResult = useCallback(
     (result: ShiftReminderSyncResult) => {
+      if (
+        result.status === "scheduled" &&
+        result.exactAlarmDenied &&
+        lastReminderWarningRef.current !== "exact-alarm-denied"
+      ) {
+        pushToast(
+          "Enable exact alarms for ShiftTracker in Android settings for reliable reminders.",
+          "info",
+        );
+        lastReminderWarningRef.current = "exact-alarm-denied";
+        return;
+      }
+
       if (result.status === "scheduled" || result.status === "disabled" || result.status === "unsupported") {
         lastReminderWarningRef.current = null;
         return;
@@ -58,14 +71,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       }
 
       if (result.status === "permission-denied") {
-        pushToast("Notifications are blocked on this device. Enable app notifications in Android TV settings.", "error");
-      }
-
-      if (result.status === "exact-alarm-denied") {
-        pushToast(
-          "Allow exact alarms for ShiftTracker in Android TV settings so reminders fire on time.",
-          "info",
-        );
+        pushToast("Notifications are blocked on this device. Enable app notifications in Android settings.", "error");
       }
 
       lastReminderWarningRef.current = result.status;

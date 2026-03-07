@@ -27,8 +27,8 @@ type ShiftReminderPreferences = Pick<
 >;
 
 export type ShiftReminderSyncResult =
-  | { status: "unsupported" | "disabled" | "permission-denied" | "exact-alarm-denied" }
-  | { status: "scheduled"; scheduledCount: number };
+  | { status: "unsupported" | "disabled" | "permission-denied" }
+  | { status: "scheduled"; scheduledCount: number; exactAlarmDenied?: boolean };
 
 function clampReminderValue(value: number): number {
   if (!Number.isFinite(value)) {
@@ -188,15 +188,6 @@ async function ensureShiftReminderChannel(): Promise<void> {
   });
 }
 
-async function canScheduleExactAlarms(): Promise<boolean> {
-  if (!isAndroidNativePlatform()) {
-    return true;
-  }
-
-  const permissions = await LocalNotifications.checkExactNotificationSetting();
-  return permissions.exact_alarm === "granted";
-}
-
 export async function syncShiftReminderNotifications(
   uid: string,
   entries: RotaEntry[],
@@ -226,8 +217,10 @@ export async function syncShiftReminderNotifications(
     return { status: "permission-denied" };
   }
 
-  if (!(await canScheduleExactAlarms())) {
-    return { status: "exact-alarm-denied" };
+  let exactAlarmDenied = false;
+  if (isAndroidNativePlatform()) {
+    const settings = await LocalNotifications.checkExactNotificationSetting();
+    exactAlarmDenied = settings.exact_alarm !== "granted";
   }
 
   await ensureShiftReminderChannel();
@@ -352,5 +345,6 @@ export async function syncShiftReminderNotifications(
   return {
     status: "scheduled",
     scheduledCount: notifications.length,
+    exactAlarmDenied,
   };
 }
