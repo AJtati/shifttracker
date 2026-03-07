@@ -4,7 +4,7 @@ import { addDays } from "date-fns";
 import { CalendarDays, LayoutDashboard, ListChecks, LogOut, UserCircle2 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useRef } from "react";
 
 import { AppLogo } from "@/components/common/AppLogo";
 import { FirebaseConfigBanner } from "@/components/common/FirebaseConfigBanner";
@@ -12,6 +12,7 @@ import { useToast } from "@/app/providers/ToastProvider";
 import { useAuth } from "@/features/auth/hooks/useAuth";
 import { getEntriesByRange } from "@/features/entries/services/entryService";
 import { isShiftReminderRuntimeSupported, syncShiftReminderNotifications } from "@/services/notifications/shiftReminderService";
+import type { ShiftReminderSyncResult } from "@/services/notifications/shiftReminderService";
 import { cn } from "@/utils/cn";
 import { toDateKey } from "@/utils/date";
 
@@ -29,6 +30,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const { user, profile, signOutUser, hasFirebaseConfig, authError, firebaseWarning, clearAuthError } = useAuth();
   const { pushToast } = useToast();
+  const lastReminderWarningRef = useRef<ShiftReminderSyncResult["status"] | null>(null);
 
   const displayName = profile?.fullName ?? user?.displayName ?? user?.email?.split("@")[0] ?? "User";
 
@@ -43,6 +45,33 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       router.prefetch(route);
     });
   }, [router]);
+
+  const handleReminderSyncResult = useCallback(
+    (result: ShiftReminderSyncResult) => {
+      if (result.status === "scheduled" || result.status === "disabled" || result.status === "unsupported") {
+        lastReminderWarningRef.current = null;
+        return;
+      }
+
+      if (lastReminderWarningRef.current === result.status) {
+        return;
+      }
+
+      if (result.status === "permission-denied") {
+        pushToast("Notifications are blocked on this device. Enable app notifications in Android TV settings.", "error");
+      }
+
+      if (result.status === "exact-alarm-denied") {
+        pushToast(
+          "Allow exact alarms for ShiftTracker in Android TV settings so reminders fire on time.",
+          "info",
+        );
+      }
+
+      lastReminderWarningRef.current = result.status;
+    },
+    [pushToast],
+  );
 
   const syncShiftReminders = useCallback(async () => {
     if (!user || !profile || !isShiftReminderRuntimeSupported()) {
@@ -65,7 +94,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         profile.shiftReminderEnabled || profile.dayBeforeReminderEnabled || profile.holidayLeaveReminderEnabled;
 
       if (!hasReminderEnabled) {
-        await syncShiftReminderNotifications(user.uid, [], reminderPreferences, displayName);
+        const result = await syncShiftReminderNotifications(user.uid, [], reminderPreferences, displayName);
+        handleReminderSyncResult(result);
         return;
       }
 
@@ -74,13 +104,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       const upcomingEntries = await getEntriesByRange(user.uid, startDate, endDate);
       const reminderEntries = upcomingEntries.filter((entry) => entry.type !== "off");
 
-      await syncShiftReminderNotifications(user.uid, reminderEntries, reminderPreferences, displayName);
+      const result = await syncShiftReminderNotifications(user.uid, reminderEntries, reminderPreferences, displayName);
+      handleReminderSyncResult(result);
     } catch (error) {
       console.warn("Unable to sync shift reminder notifications.", error);
+      const message = error instanceof Error ? error.message : "Unable to sync shift reminders.";
+      pushToast(message, "error");
     }
   }, [
     displayName,
+    handleReminderSyncResult,
     profile,
+    pushToast,
     user,
   ]);
 
