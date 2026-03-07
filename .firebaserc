@@ -1,0 +1,14 @@
+{
+  "projects": {
+    "default": "shifttracker-e6bd7"
+  },
+  "targets": {
+    "shifttracker-e6bd7": {
+      "hosting": {
+        "shiftracker": [
+          "shiftracker"
+        ]
+      }
+    }
+  }
+}

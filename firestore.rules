@@ -1,0 +1,102 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidDefaultView(value) {
+      return value == 'dashboard' || value == 'weekly' || value == 'monthly' || value == 'list';
+    }
+
+    function isValidWeekStartsOn(value) {
+      return value == 'monday' || value == 'sunday';
+    }
+
+    function isValidTimeFormat(value) {
+      return value == '12h' || value == '24h';
+    }
+
+    function isValidTheme(value) {
+      return value == 'light' || value == 'dark';
+    }
+
+    function isValidEntryType(value) {
+      return value == 'shift' || value == 'leave' || value == 'holiday' || value == 'off';
+    }
+
+    function isValidLeaveSubtype(value) {
+      return value == null || value == 'annual' || value == 'sick' || value == 'unpaid' || value == 'personal';
+    }
+
+    function isStringOrNull(value) {
+      return value == null || value is string;
+    }
+
+    function isValidUserPayload(data, userId) {
+      return data.keys().hasOnly([
+          'uid',
+          'fullName',
+          'email',
+          'defaultView',
+          'weekStartsOn',
+          'timeFormat',
+          'theme',
+          'timezone',
+          'createdAt',
+          'updatedAt'
+        ]) &&
+        data.uid == userId &&
+        data.fullName is string && data.fullName.size() > 0 && data.fullName.size() <= 100 &&
+        data.email is string && data.email.size() > 0 && data.email.size() <= 200 &&
+        isValidDefaultView(data.defaultView) &&
+        isValidWeekStartsOn(data.weekStartsOn) &&
+        isValidTimeFormat(data.timeFormat) &&
+        (!data.keys().hasAny(['theme']) || isValidTheme(data.theme)) &&
+        data.timezone is string && data.timezone.size() > 0 && data.timezone.size() <= 100;
+    }
+
+    function isValidEntryPayload(data) {
+      return data.keys().hasOnly([
+          'date',
+          'type',
+          'title',
+          'startTime',
+          'endTime',
+          'leaveSubtype',
+          'location',
+          'notes',
+          'color',
+          'createdAt',
+          'updatedAt'
+        ]) &&
+        data.date is string && data.date.size() == 10 &&
+        isValidEntryType(data.type) &&
+        data.title is string && data.title.size() > 0 && data.title.size() <= 100 &&
+        isStringOrNull(data.location) &&
+        isStringOrNull(data.notes) && (data.notes == null || data.notes.size() <= 500) &&
+        isStringOrNull(data.color) &&
+        isValidLeaveSubtype(data.leaveSubtype) &&
+        ((data.type == 'shift' && data.startTime is string && data.endTime is string && data.startTime < data.endTime) ||
+          (data.type != 'shift' && data.startTime == null && data.endTime == null));
+    }
+
+    match /users/{userId} {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidUserPayload(request.resource.data, userId);
+      allow update: if isOwner(userId) && isValidUserPayload(request.resource.data, userId);
+      allow delete: if false;
+
+      match /entries/{entryId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidEntryPayload(request.resource.data);
+        allow update: if isOwner(userId) && isValidEntryPayload(request.resource.data);
+        allow delete: if isOwner(userId);
+      }
+    }
+  }
+}
