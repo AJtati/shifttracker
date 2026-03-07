@@ -99,6 +99,55 @@ Notes:
 - Keep Firebase Web config in `.env.local` (same values used by web app).
 - In Firebase Authentication -> Settings -> Authorized domains, ensure `localhost` is present for Capacitor WebView auth flows.
 
+## Android App (Mobile + Android TV)
+
+This repo is configured with two Android flavors:
+
+- `mobile`: standard Android phones/tablets
+- `tv`: Android TV build (`LEANBACK_LAUNCHER` enabled)
+
+1. Prepare Android project once:
+
+```bash
+npm run android:add
+```
+
+2. Build web + sync native Android files:
+
+```bash
+npm run android:sync
+```
+
+3. Open Android Studio:
+
+```bash
+npm run android:open
+```
+
+4. Build APKs from CLI:
+
+```bash
+# Mobile APKs
+npm run android:apk:mobile:debug
+npm run android:apk:mobile:release
+
+# Android TV APKs
+npm run android:apk:tv:debug
+npm run android:apk:tv:release
+```
+
+APK output folders:
+
+- `android/app/build/outputs/apk/mobile/debug/`
+- `android/app/build/outputs/apk/mobile/release/`
+- `android/app/build/outputs/apk/tv/debug/`
+- `android/app/build/outputs/apk/tv/release/`
+
+Notification notes:
+
+- Android 13+ requires runtime notification permission (already handled in app code).
+- Android TV support depends on device/launcher behavior; install the `tv` APK on TV to receive app notifications there.
+
 ## Firestore Rules
 
 Rules are in `firestore.rules` and enforce:
