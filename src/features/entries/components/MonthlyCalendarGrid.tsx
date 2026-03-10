@@ -86,7 +86,7 @@ export function MonthlyCalendarGrid({
               className={cn(
                 "relative min-h-[86px] rounded-xl border px-2 py-2 text-left transition md:min-h-[92px]",
                 entryType ? entryTileClassName[entryType] : "border-slate-200 bg-white hover:border-blue-300",
-                isSelected && hasEntry && "ring-2 ring-white/80 shadow-[0_0_0_1px_rgba(255,255,255,0.25)]",
+                isSelected && hasEntry && "calendar-selected-entry",
                 isSelected && !hasEntry && "border-blue-500 bg-blue-50",
                 !isCurrentMonth && "opacity-45",
               )}

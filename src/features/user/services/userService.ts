@@ -36,7 +36,7 @@ function normalizeShiftReminderValue(value: unknown): number {
   }
 
   const roundedValue = Math.round(value);
-  return Math.min(10080, Math.max(1, roundedValue));
+  return Math.min(10080, Math.max(0, roundedValue));
 }
 
 function normalizePreferences(preferences: UserPreferences): UserPreferences {

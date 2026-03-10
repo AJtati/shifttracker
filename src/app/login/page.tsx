@@ -18,12 +18,14 @@ interface LoginFormValues {
 export default function LoginPage() {
   const router = useRouter();
   const { pushToast } = useToast();
-  const { user, signInWithEmail, authError } = useAuth();
+  const { user, signInWithEmail, resendVerification, authError } = useAuth();
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isResendingVerification, setIsResendingVerification] = useState(false);
 
   const {
     register,
     handleSubmit,
+    getValues,
     formState: { errors },
   } = useForm<LoginFormValues>();
 
@@ -49,6 +51,29 @@ export default function LoginPage() {
       setIsSubmitting(false);
     }
   };
+
+  const handleResendVerification = async () => {
+    const email = getValues("email")?.trim();
+    const password = getValues("password");
+
+    if (!email || !password) {
+      pushToast("Enter your email and password first, then resend verification email.", "error");
+      return;
+    }
+
+    setIsResendingVerification(true);
+    try {
+      await resendVerification(email, password);
+      pushToast("Verification email sent. Check inbox and spam folder.", "success");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to resend verification email.";
+      pushToast(message, "error");
+    } finally {
+      setIsResendingVerification(false);
+    }
+  };
+
+  const showResendVerification = authError?.toLowerCase().includes("verify your email") ?? false;
 
   return (
     <div className="auth-page-bg flex items-center justify-center px-4 py-10">
@@ -83,6 +108,16 @@ export default function LoginPage() {
           </div>
 
           {authError ? <p className="text-sm font-semibold text-rose-600">{authError}</p> : null}
+          {showResendVerification ? (
+            <button
+              type="button"
+              onClick={handleResendVerification}
+              disabled={isSubmitting || isResendingVerification}
+              className="text-sm font-semibold text-blue-600 transition hover:text-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {isResendingVerification ? "Resending verification email..." : "Resend verification email"}
+            </button>
+          ) : null}
 
           <GradientButton type="submit" block disabled={isSubmitting}>
             {isSubmitting ? "Signing in..." : "Login"}

@@ -1,0 +1,27 @@
+{
+  "name": "shifttracker-functions",
+  "private": true,
+  "main": "lib/index.js",
+  "engines": {
+    "node": "20"
+  },
+  "scripts": {
+    "build": "tsc",
+    "clean": "rimraf lib",
+    "serve": "firebase emulators:start --only functions",
+    "deploy": "firebase deploy --only functions",
+    "logs": "firebase functions:log"
+  },
+  "dependencies": {
+    "firebase-admin": "^12.7.0",
+    "firebase-functions": "^5.1.1",
+    "luxon": "^3.6.1",
+    "shifttracker": "file:.."
+  },
+  "devDependencies": {
+    "@types/luxon": "^3.6.2",
+    "@types/node": "^20.17.57",
+    "rimraf": "^6.0.1",
+    "typescript": "^5.7.2"
+  }
+}

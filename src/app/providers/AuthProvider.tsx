@@ -3,11 +3,19 @@
 import { User } from "firebase/auth";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 
-import { logIn, logOut, resetPassword, signUp, subscribeToAuthChanges } from "@/features/auth/services/authService";
+import {
+  logIn,
+  logOut,
+  resendVerificationEmail,
+  resetPassword,
+  signUp,
+  subscribeToAuthChanges,
+} from "@/features/auth/services/authService";
 import { toFriendlyAuthError } from "@/features/auth/utils/errorMessage";
 import { ensureUserProfile, getUserProfile, subscribeToUserProfile } from "@/features/user/services/userService";
 import { hasFirebaseConfig } from "@/services/firebase/client";
 import { isFirestoreSetupError } from "@/services/firebase/errors";
+import { disableCurrentDevicePushToken } from "@/services/notifications/pushNotificationService";
 import { UserProfile } from "@/types/user";
 import { DEFAULT_PREFERENCES } from "@/utils/constants";
 
@@ -28,6 +36,7 @@ interface AuthContextValue {
   signUpWithEmail: (payload: SignUpPayload) => Promise<void>;
   signInWithEmail: (email: string, password: string) => Promise<void>;
   signOutUser: () => Promise<void>;
+  resendVerification: (email: string, password: string) => Promise<void>;
   sendPasswordReset: (email: string) => Promise<void>;
   refreshProfile: () => Promise<void>;
 }
@@ -220,16 +229,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setAuthError(null);
 
     try {
-      const newUser = await signUp({ fullName, email, password });
-      setUser(newUser);
+      await signUp({ fullName, email, password });
       setIsLoading(false);
-      setProfile((existingProfile) => existingProfile ?? fallbackProfileFromAuth(newUser));
     } catch (error) {
       const message = toFriendlyAuthError(error);
       setAuthError(message);
       throw new Error(message);
     }
-  }, [fallbackProfileFromAuth]);
+  }, []);
 
   const signInWithEmail = useCallback(async (email: string, password: string) => {
     setAuthError(null);
@@ -250,10 +257,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setAuthError(null);
 
     try {
+      if (user) {
+        try {
+          await disableCurrentDevicePushToken(user.uid);
+        } catch (error) {
+          console.warn("Unable to disable device push token on sign out.", error);
+        }
+      }
+
       await logOut();
       setProfile(null);
       setUser(null);
       setFirebaseWarning(null);
+    } catch (error) {
+      const message = toFriendlyAuthError(error);
+      setAuthError(message);
+      throw new Error(message);
+    }
+  }, [user]);
+
+  const resendVerification = useCallback(async (email: string, password: string) => {
+    setAuthError(null);
+
+    try {
+      await resendVerificationEmail(email, password);
     } catch (error) {
       const message = toFriendlyAuthError(error);
       setAuthError(message);
@@ -289,6 +316,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       signUpWithEmail,
       signInWithEmail,
       signOutUser,
+      resendVerification,
       sendPasswordReset,
       refreshProfile,
     }),
@@ -300,6 +328,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       profile,
       refreshProfile,
       sendPasswordReset,
+      resendVerification,
       signInWithEmail,
       signOutUser,
       signUpWithEmail,

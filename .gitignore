@@ -19,6 +19,7 @@
 
 # production
 /build
+/artifacts/
 
 # misc
 .DS_Store
@@ -30,6 +31,10 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 firebase-debug.log*
+android/*.jks
+android/keystore.properties
+android/app/google-services.json
+ios/App/App/GoogleService-Info.plist
 
 # firebase local cache/artifacts
 .firebase/

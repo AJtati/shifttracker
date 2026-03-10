@@ -1,5 +1,6 @@
 "use client";
 
+import { Capacitor } from "@capacitor/core";
 import { useRouter } from "next/navigation";
 import { useMemo } from "react";
 
@@ -11,6 +12,15 @@ import { PreferencesForm } from "@/features/user/components/PreferencesForm";
 import { ProfileDetailsForm } from "@/features/user/components/ProfileDetailsForm";
 import { usePreferences } from "@/hooks/usePreferences";
 import { useUserProfile } from "@/hooks/useUserProfile";
+import {
+  openAppNotificationSettings,
+  openNotificationChannelSettings,
+} from "@/services/notifications/pushNotificationService";
+import {
+  SHIFT_REMINDER_CHANNEL_ID,
+  openExactAlarmSettings,
+  scheduleShiftReminderTestNotification,
+} from "@/services/notifications/shiftReminderService";
 import { UserProfile } from "@/types/user";
 import { DEFAULT_PREFERENCES } from "@/utils/constants";
 
@@ -58,6 +68,8 @@ export default function ProfilePage() {
     return <LoadingState label="Loading profile..." />;
   }
 
+  const isAndroidNative = Capacitor.isNativePlatform() && Capacitor.getPlatform() === "android";
+
   const handleLogout = async () => {
     try {
       await signOutUser();
@@ -67,6 +79,71 @@ export default function ProfilePage() {
       const message = logoutError instanceof Error ? logoutError.message : "Unable to log out.";
       pushToast(message, "error");
     }
+  };
+
+  const handleSendTestNotification = async () => {
+    try {
+      const result = await scheduleShiftReminderTestNotification(resolvedProfile.fullName);
+
+      if (result.status === "unsupported") {
+        pushToast("Test notifications are only available in the native Android/iOS app.", "error");
+        return;
+      }
+
+      if (result.status === "permission-denied") {
+        pushToast("Notifications are blocked on this device. Redirecting to app notification settings.", "error");
+        const opened = await openAppNotificationSettings();
+        if (!opened) {
+          pushToast("Unable to open notification settings automatically.", "error");
+        }
+        return;
+      }
+
+      if (result.status !== "scheduled") {
+        pushToast("Unable to schedule test notification.", "error");
+        return;
+      }
+
+      const triggerLabel = result.triggerAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+      pushToast(`Test notification scheduled for ${triggerLabel}.`, "success");
+
+      if (result.exactAlarmDenied) {
+        pushToast("Exact alarms are disabled in Android settings, so reminders may fire late.", "info");
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to schedule a test notification.";
+      pushToast(message, "error");
+    }
+  };
+
+  const handleOpenNotificationSettings = async () => {
+    const opened = await openAppNotificationSettings();
+    if (!opened) {
+      pushToast("Unable to open app notification settings on this device.", "error");
+      return;
+    }
+
+    pushToast("Opened app notification settings.", "success");
+  };
+
+  const handleOpenReminderSoundSettings = async () => {
+    const opened = await openNotificationChannelSettings(SHIFT_REMINDER_CHANNEL_ID);
+    if (!opened) {
+      pushToast("Unable to open reminder sound settings on this device.", "error");
+      return;
+    }
+
+    pushToast("Opened reminder channel settings. You can change sound there.", "success");
+  };
+
+  const handleOpenExactAlarmSettings = async () => {
+    const opened = await openExactAlarmSettings();
+    if (!opened) {
+      pushToast("Unable to open exact alarm settings on this device.", "error");
+      return;
+    }
+
+    pushToast("Opened exact alarm settings.", "success");
   };
 
   return (
@@ -100,7 +177,9 @@ export default function ProfilePage() {
             <dt className="font-semibold text-slate-600">Shift reminders</dt>
             <dd className="font-bold text-slate-800">
               {resolvedProfile.shiftReminderEnabled
-                ? `${resolvedProfile.shiftReminderValue} ${resolvedProfile.shiftReminderUnit} before`
+                ? resolvedProfile.shiftReminderValue === 0
+                  ? "At shift start"
+                  : `${resolvedProfile.shiftReminderValue} ${resolvedProfile.shiftReminderUnit} before`
                 : "Off"}
             </dd>
           </div>
@@ -111,7 +190,7 @@ export default function ProfilePage() {
             </dd>
           </div>
           <div className="flex justify-between rounded-xl border border-slate-200 px-3 py-2">
-            <dt className="font-semibold text-slate-600">Holiday/leave reminder</dt>
+            <dt className="font-semibold text-slate-600">Same-day reminder</dt>
             <dd className="font-bold text-slate-800">
               {resolvedProfile.holidayLeaveReminderEnabled ? resolvedProfile.holidayLeaveReminderTime : "Off"}
             </dd>
@@ -121,6 +200,25 @@ export default function ProfilePage() {
         <GradientButton type="button" tone="orange" onClick={handleLogout}>
           Logout
         </GradientButton>
+        <GradientButton type="button" onClick={handleSendTestNotification}>
+          Send test notification (15s)
+        </GradientButton>
+        {isAndroidNative ? (
+          <div className="space-y-2 rounded-2xl border border-slate-200 bg-slate-50 p-3">
+            <p className="text-xs font-semibold text-slate-700">
+              Notification setup shortcuts (Android)
+            </p>
+            <GradientButton type="button" tone="slate" onClick={handleOpenNotificationSettings}>
+              Open notification permission settings
+            </GradientButton>
+            <GradientButton type="button" tone="slate" onClick={handleOpenReminderSoundSettings}>
+              Open reminder sound settings
+            </GradientButton>
+            <GradientButton type="button" tone="slate" onClick={handleOpenExactAlarmSettings}>
+              Open exact alarm settings
+            </GradientButton>
+          </div>
+        ) : null}
       </section>
 
       <div className="space-y-3">

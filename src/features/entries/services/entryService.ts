@@ -5,6 +5,7 @@ import {
   getDoc,
   getDocs,
   limit,
+  onSnapshot,
   orderBy,
   query,
   serverTimestamp,
@@ -475,6 +476,52 @@ export async function getEntriesByRange(
     return dedupedRemoteEntries;
   } catch (error) {
     throw toFirebaseAppError(error, "Unable to load entries.");
+  }
+}
+
+export function subscribeToEntriesByRange(
+  uid: string,
+  startDate: string,
+  endDate: string,
+  filters: RotaEntryFilters = {},
+  onEntries: (entries: RotaEntry[]) => void,
+  onError?: (error: unknown) => void,
+): () => void {
+  const requestedType = filters.type ?? "all";
+  const cacheKey = buildRangeCacheKey(uid, startDate, endDate, requestedType);
+  const cachedEntries = readEntriesFromCache(cacheKey);
+
+  if (cachedEntries) {
+    onEntries(cachedEntries);
+  }
+
+  try {
+    let entriesQuery = query(
+      entryCollection(uid),
+      where("date", ">=", startDate),
+      where("date", "<=", endDate),
+      orderBy("date", "asc"),
+    );
+
+    if (requestedType !== "all") {
+      entriesQuery = query(entriesQuery, where("type", "==", requestedType));
+    }
+
+    return onSnapshot(
+      entriesQuery,
+      (snapshot) => {
+        const remoteEntries = snapshot.docs.map((entryDoc) => toRotaEntry(entryDoc.id, entryDoc.data()));
+        const dedupedRemoteEntries = dedupeEntriesByDate(remoteEntries);
+        writeEntriesToCache(cacheKey, dedupedRemoteEntries);
+        onEntries(cloneEntries(dedupedRemoteEntries));
+      },
+      (error) => {
+        onError?.(toFirebaseAppError(error, "Unable to subscribe to entries."));
+      },
+    );
+  } catch (error) {
+    onError?.(toFirebaseAppError(error, "Unable to subscribe to entries."));
+    return () => {};
   }
 }
 

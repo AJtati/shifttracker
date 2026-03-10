@@ -1,13 +1,18 @@
 import UIKit
 import Capacitor
+import FirebaseCore
+import FirebaseMessaging
 
 @UIApplicationMain
-class AppDelegate: UIResponder, UIApplicationDelegate {
+class AppDelegate: UIResponder, UIApplicationDelegate, MessagingDelegate {
 
     var window: UIWindow?
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
-        // Override point for customization after application launch.
+        configureFirebaseIfAvailable()
+        if FirebaseApp.app() != nil {
+            Messaging.messaging().delegate = self
+        }
         return true
     }
 
@@ -33,6 +38,51 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         // Called when the application is about to terminate. Save data if appropriate. See also applicationDidEnterBackground:.
     }
 
+    func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
+        guard FirebaseApp.app() != nil else {
+            let configError = NSError(
+                domain: "com.ajithsuryathati.shifttracker",
+                code: -2,
+                userInfo: [NSLocalizedDescriptionKey: "Firebase is not configured for iOS push notifications."]
+            )
+            NotificationCenter.default.post(name: .capacitorDidFailToRegisterForRemoteNotifications, object: configError)
+            return
+        }
+
+        Messaging.messaging().apnsToken = deviceToken
+
+        Messaging.messaging().token { token, error in
+            if let error = error {
+                NotificationCenter.default.post(name: .capacitorDidFailToRegisterForRemoteNotifications, object: error)
+                return
+            }
+
+            guard let fcmToken = token, !fcmToken.isEmpty else {
+                let tokenError = NSError(
+                    domain: "com.ajithsuryathati.shifttracker",
+                    code: -1,
+                    userInfo: [NSLocalizedDescriptionKey: "Unable to fetch Firebase Messaging token."]
+                )
+                NotificationCenter.default.post(name: .capacitorDidFailToRegisterForRemoteNotifications, object: tokenError)
+                return
+            }
+
+            NotificationCenter.default.post(name: .capacitorDidRegisterForRemoteNotifications, object: fcmToken)
+        }
+    }
+
+    func application(_ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) {
+        NotificationCenter.default.post(name: .capacitorDidFailToRegisterForRemoteNotifications, object: error)
+    }
+
+    func messaging(_ messaging: Messaging, didReceiveRegistrationToken fcmToken: String?) {
+        guard let fcmToken, !fcmToken.isEmpty else {
+            return
+        }
+
+        NotificationCenter.default.post(name: .capacitorDidRegisterForRemoteNotifications, object: fcmToken)
+    }
+
     func application(_ app: UIApplication, open url: URL, options: [UIApplication.OpenURLOptionsKey: Any] = [:]) -> Bool {
         // Called when the app was launched with a url. Feel free to add additional processing here,
         // but if you want the App API to support tracking app url opens, make sure to keep this call
@@ -44,6 +94,22 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         // Feel free to add additional processing here, but if you want the App API to support
         // tracking app url opens, make sure to keep this call
         return ApplicationDelegateProxy.shared.application(application, continue: userActivity, restorationHandler: restorationHandler)
+    }
+
+    private func configureFirebaseIfAvailable() {
+        if FirebaseApp.app() != nil {
+            return
+        }
+
+        guard
+            let plistPath = Bundle.main.path(forResource: "GoogleService-Info", ofType: "plist"),
+            let options = FirebaseOptions(contentsOfFile: plistPath)
+        else {
+            NSLog("[ShiftTracker] GoogleService-Info.plist not found in app bundle. Firebase Messaging is disabled.")
+            return
+        }
+
+        FirebaseApp.configure(options: options)
     }
 
 }

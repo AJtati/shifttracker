@@ -47,7 +47,8 @@ export default function SignupPage() {
         email: values.email,
         password: values.password,
       });
-      pushToast("Account created successfully.", "success");
+      pushToast("Account created. Verify your email, then log in.", "success");
+      router.replace("/login");
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unable to create account.";
       pushToast(message, "error");

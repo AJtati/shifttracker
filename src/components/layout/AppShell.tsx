@@ -1,18 +1,33 @@
 "use client";
 
+import { Capacitor } from "@capacitor/core";
+import { LocalNotifications } from "@capacitor/local-notifications";
+import { PushNotifications } from "@capacitor/push-notifications";
 import { addDays } from "date-fns";
 import { CalendarDays, LayoutDashboard, ListChecks, LogOut, UserCircle2 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { AppLogo } from "@/components/common/AppLogo";
 import { FirebaseConfigBanner } from "@/components/common/FirebaseConfigBanner";
 import { useToast } from "@/app/providers/ToastProvider";
 import { useAuth } from "@/features/auth/hooks/useAuth";
-import { getEntriesByRange } from "@/features/entries/services/entryService";
-import { isShiftReminderRuntimeSupported, syncShiftReminderNotifications } from "@/services/notifications/shiftReminderService";
+import { getEntriesByRange, subscribeToEntriesByRange } from "@/features/entries/services/entryService";
+import {
+  ensurePushNotificationRegistration,
+  getRecentPushDeliveryFailure,
+  isAndroidTvDevice,
+  isPushNotificationRuntimeSupported,
+  setPushNotificationReceivedHandler,
+} from "@/services/notifications/pushNotificationService";
+import {
+  clearShiftReminderNotifications,
+  isShiftReminderRuntimeSupported,
+  syncShiftReminderNotifications,
+} from "@/services/notifications/shiftReminderService";
 import type { ShiftReminderSyncResult } from "@/services/notifications/shiftReminderService";
+import type { RotaEntry } from "@/types/entry";
 import { cn } from "@/utils/cn";
 import { toDateKey } from "@/utils/date";
 
@@ -24,15 +39,32 @@ const navigationItems = [
   { href: "/profile", label: "Profile", icon: UserCircle2 },
 ];
 const NOTIFICATION_LOOKAHEAD_DAYS = 120;
+const REMINDER_SYNC_DEBOUNCE_MS = 300;
+const PUSH_REMINDER_TRANSPORT_ENABLED = process.env.NEXT_PUBLIC_ENABLE_PUSH_REMINDERS !== "false";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const { user, profile, signOutUser, hasFirebaseConfig, authError, firebaseWarning, clearAuthError } = useAuth();
   const { pushToast } = useToast();
-  const lastReminderWarningRef = useRef<"permission-denied" | "exact-alarm-denied" | null>(null);
+  const lastReminderWarningRef = useRef<
+    "permission-denied" | "exact-alarm-denied" | "runtime-unsupported" | null
+  >(null);
+  const reminderEntriesRef = useRef<RotaEntry[] | null>(null);
+  const reminderSyncTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastPushRegistrationWarningRef = useRef<
+    "permission-denied" | "registration-failed" | "runtime-not-configured" | null
+  >(null);
+  const lastTvPushFailureKeyRef = useRef<string | null>(null);
+  const localRemindersClearedForPushRef = useRef(false);
+  const [notificationTransport, setNotificationTransport] = useState<"local" | "push">("local");
 
   const displayName = profile?.fullName ?? user?.displayName ?? user?.email?.split("@")[0] ?? "User";
+  const canUsePushReminderTransport =
+    PUSH_REMINDER_TRANSPORT_ENABLED && Boolean(user) && isPushNotificationRuntimeSupported();
+  const activeNotificationTransport: "local" | "push" = canUsePushReminderTransport
+    ? notificationTransport
+    : "local";
 
   useEffect(() => {
     clearAuthError();
@@ -79,8 +111,36 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     [pushToast],
   );
 
-  const syncShiftReminders = useCallback(async () => {
-    if (!user || !profile || !isShiftReminderRuntimeSupported()) {
+  const syncShiftReminders = useCallback(async (entriesOverride?: RotaEntry[]) => {
+    if (!user || !profile) {
+      return;
+    }
+
+    if (activeNotificationTransport === "push") {
+      if (!localRemindersClearedForPushRef.current) {
+        try {
+          await clearShiftReminderNotifications(user.uid);
+        } catch (error) {
+          console.warn("Unable to clear local reminders after enabling push transport.", error);
+        }
+        localRemindersClearedForPushRef.current = true;
+      }
+      return;
+    }
+
+    localRemindersClearedForPushRef.current = false;
+
+    if (!isShiftReminderRuntimeSupported()) {
+      if (
+        Capacitor.isNativePlatform() &&
+        lastReminderWarningRef.current !== "runtime-unsupported"
+      ) {
+        pushToast(
+          "This Android build is missing local notification support. Rebuild and reinstall after running npm run android:sync.",
+          "error",
+        );
+        lastReminderWarningRef.current = "runtime-unsupported";
+      }
       return;
     }
 
@@ -105,10 +165,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         return;
       }
 
-      const startDate = toDateKey(new Date());
-      const endDate = toDateKey(addDays(new Date(), NOTIFICATION_LOOKAHEAD_DAYS));
-      const upcomingEntries = await getEntriesByRange(user.uid, startDate, endDate);
-      const reminderEntries = upcomingEntries.filter((entry) => entry.type !== "off");
+      const reminderEntries =
+        entriesOverride ??
+        (await (async () => {
+          const startDate = toDateKey(new Date());
+          const endDate = toDateKey(addDays(new Date(), NOTIFICATION_LOOKAHEAD_DAYS));
+          const upcomingEntries = await getEntriesByRange(user.uid, startDate, endDate);
+          return upcomingEntries.filter((entry) => entry.type !== "off");
+        })());
 
       const result = await syncShiftReminderNotifications(user.uid, reminderEntries, reminderPreferences, displayName);
       handleReminderSyncResult(result);
@@ -118,6 +182,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       pushToast(message, "error");
     }
   }, [
+    activeNotificationTransport,
     displayName,
     handleReminderSyncResult,
     profile,
@@ -125,9 +190,199 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     user,
   ]);
 
+  const queueShiftReminderSync = useCallback(
+    (entriesOverride?: RotaEntry[]) => {
+      if (entriesOverride) {
+        reminderEntriesRef.current = entriesOverride;
+      }
+
+      if (reminderSyncTimeoutRef.current) {
+        clearTimeout(reminderSyncTimeoutRef.current);
+      }
+
+      reminderSyncTimeoutRef.current = setTimeout(() => {
+        const nextEntries = reminderEntriesRef.current ?? undefined;
+        reminderEntriesRef.current = null;
+        void syncShiftReminders(nextEntries);
+      }, REMINDER_SYNC_DEBOUNCE_MS);
+    },
+    [syncShiftReminders],
+  );
+
+  const reportTvPushDiagnostics = useCallback(async () => {
+    if (!user) {
+      return;
+    }
+
+    const tvDevice = await isAndroidTvDevice();
+    if (!tvDevice) {
+      return;
+    }
+
+    try {
+      const latestFailure = await getRecentPushDeliveryFailure(user.uid);
+      if (!latestFailure) {
+        return;
+      }
+
+      const failureKey = `${latestFailure.failureCode ?? "unknown"}-${latestFailure.updatedAt?.getTime() ?? 0}`;
+      if (lastTvPushFailureKeyRef.current === failureKey) {
+        return;
+      }
+
+      lastTvPushFailureKeyRef.current = failureKey;
+      const failureCode = latestFailure.failureCode ?? "unknown-error";
+      pushToast(
+        `TV push diagnostics: token registered, but a recent reminder delivery failed (${failureCode}).`,
+        "info",
+      );
+      console.warn("TV push diagnostics: recent reminder delivery failed.", {
+        uid: user.uid,
+        failureCode,
+        failedAt: latestFailure.updatedAt?.toISOString() ?? null,
+      });
+    } catch (error) {
+      console.warn("Unable to load TV push delivery diagnostics.", error);
+    }
+  }, [pushToast, user]);
+
   useEffect(() => {
-    void syncShiftReminders();
-  }, [pathname, syncShiftReminders]);
+    if (!canUsePushReminderTransport || !user) {
+      localRemindersClearedForPushRef.current = false;
+      return;
+    }
+
+    let active = true;
+
+    const registerPushNotifications = async () => {
+      const status = await ensurePushNotificationRegistration(user.uid);
+
+      if (!active) {
+        return;
+      }
+
+      if (status === "permission-denied" && lastPushRegistrationWarningRef.current !== "permission-denied") {
+        setNotificationTransport("local");
+        localRemindersClearedForPushRef.current = false;
+        pushToast(
+          "Push notifications are disabled. Enable notifications for ShiftTracker in device settings.",
+          "error",
+        );
+        lastPushRegistrationWarningRef.current = "permission-denied";
+        return;
+      }
+
+      if (status === "registration-failed" && lastPushRegistrationWarningRef.current !== "registration-failed") {
+        setNotificationTransport("local");
+        localRemindersClearedForPushRef.current = false;
+        pushToast(
+          "Push notification registration failed on this build. Add Firebase app config files and rebuild the app.",
+          "error",
+        );
+        lastPushRegistrationWarningRef.current = "registration-failed";
+        return;
+      }
+
+      if (status === "runtime-not-configured" && lastPushRegistrationWarningRef.current !== "runtime-not-configured") {
+        setNotificationTransport("local");
+        localRemindersClearedForPushRef.current = false;
+        pushToast(
+          "Push notifications are not configured in this Android build. Add google-services.json and rebuild.",
+          "info",
+        );
+        lastPushRegistrationWarningRef.current = "runtime-not-configured";
+        return;
+      }
+
+      if (status === "registered") {
+        setNotificationTransport("push");
+        lastPushRegistrationWarningRef.current = null;
+        void reportTvPushDiagnostics();
+        queueShiftReminderSync();
+        return;
+      }
+
+      setNotificationTransport("local");
+      localRemindersClearedForPushRef.current = false;
+    };
+
+    void registerPushNotifications();
+
+    return () => {
+      active = false;
+    };
+  }, [canUsePushReminderTransport, pushToast, queueShiftReminderSync, reportTvPushDiagnostics, user]);
+
+  useEffect(() => {
+    setPushNotificationReceivedHandler((notification) => {
+      const title = notification.title?.trim();
+      const body = notification.body?.trim();
+
+      if (title && body) {
+        pushToast(`${title}: ${body}`, "info");
+        return;
+      }
+
+      if (title) {
+        pushToast(title, "info");
+      }
+    });
+
+    return () => {
+      setPushNotificationReceivedHandler(null);
+    };
+  }, [pushToast]);
+
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) {
+      return;
+    }
+
+    let pushActionListener: { remove: () => Promise<void> } | null = null;
+    let localActionListener: { remove: () => Promise<void> } | null = null;
+
+    const openDashboardFromNotification = () => {
+      router.push("/dashboard");
+    };
+
+    const attachNotificationActionListeners = async () => {
+      if (isPushNotificationRuntimeSupported()) {
+        pushActionListener = await PushNotifications.addListener("pushNotificationActionPerformed", () => {
+          openDashboardFromNotification();
+        });
+      }
+
+      if (isShiftReminderRuntimeSupported()) {
+        localActionListener = await LocalNotifications.addListener("localNotificationActionPerformed", () => {
+          openDashboardFromNotification();
+        });
+      }
+    };
+
+    void attachNotificationActionListeners();
+
+    return () => {
+      if (pushActionListener) {
+        void pushActionListener.remove();
+      }
+
+      if (localActionListener) {
+        void localActionListener.remove();
+      }
+    };
+  }, [router]);
+
+  useEffect(() => {
+    return () => {
+      if (reminderSyncTimeoutRef.current) {
+        clearTimeout(reminderSyncTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    queueShiftReminderSync();
+  }, [pathname, queueShiftReminderSync]);
 
   useEffect(() => {
     if (typeof document === "undefined") {
@@ -136,7 +391,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
     const handleVisibilityChange = () => {
       if (document.visibilityState === "visible") {
-        void syncShiftReminders();
+        queueShiftReminderSync();
       }
     };
 
@@ -144,7 +399,40 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     return () => {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [syncShiftReminders]);
+  }, [queueShiftReminderSync]);
+
+  useEffect(() => {
+    if (!user || !profile || activeNotificationTransport !== "local" || !isShiftReminderRuntimeSupported()) {
+      return;
+    }
+
+    const hasReminderEnabled =
+      profile.shiftReminderEnabled || profile.dayBeforeReminderEnabled || profile.holidayLeaveReminderEnabled;
+
+    if (!hasReminderEnabled) {
+      queueShiftReminderSync([]);
+      return;
+    }
+
+    const startDate = toDateKey(new Date());
+    const endDate = toDateKey(addDays(new Date(), NOTIFICATION_LOOKAHEAD_DAYS));
+
+    return subscribeToEntriesByRange(
+      user.uid,
+      startDate,
+      endDate,
+      {},
+      (entries) => {
+        const reminderEntries = entries.filter((entry) => entry.type !== "off");
+        queueShiftReminderSync(reminderEntries);
+      },
+      (error) => {
+        console.warn("Unable to watch entries for reminder sync.", error);
+        const message = error instanceof Error ? error.message : "Unable to watch reminder updates.";
+        pushToast(message, "error");
+      },
+    );
+  }, [activeNotificationTransport, profile, pushToast, queueShiftReminderSync, user]);
 
   const handleSignOut = async () => {
     try {

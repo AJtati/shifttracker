@@ -1,14 +1,72 @@
 apply plugin: 'com.android.application'
 
+import groovy.json.JsonSlurper
+
+def baseApplicationId = "com.ajithsuryathati.shifttracker"
+def tvApplicationId = "${baseApplicationId}.tv"
+def googleServicesFile = file("google-services.json")
+
+def hasFirebaseClientForPackage = { String packageName ->
+    if (!googleServicesFile.exists()) {
+        return false
+    }
+
+    try {
+        def parsed = new JsonSlurper().parseText(googleServicesFile.getText("UTF-8"))
+        def clients = parsed?.client instanceof List ? parsed.client : []
+        return clients.any { client ->
+            client?.client_info?.android_client_info?.package_name == packageName
+        }
+    } catch (Exception ignored) {
+        return false
+    }
+}
+
+def hasBaseFirebaseClient = hasFirebaseClientForPackage(baseApplicationId)
+def hasTvFirebaseClient = hasFirebaseClientForPackage(tvApplicationId)
+def useTvApplicationIdSuffix = hasTvFirebaseClient
+
+if (googleServicesFile.exists()) {
+    apply plugin: 'com.google.gms.google-services'
+}
+
+if (!googleServicesFile.exists()) {
+    logger.lifecycle("google-services.json was not found. Firebase push runtime will be unavailable.")
+}
+
+if (googleServicesFile.exists() && !hasBaseFirebaseClient) {
+    logger.lifecycle("google-services.json is missing package ${baseApplicationId}. Firebase push runtime will be unavailable.")
+}
+
+if (googleServicesFile.exists() && !hasTvFirebaseClient) {
+    logger.lifecycle("google-services.json is missing package ${tvApplicationId}. TV flavor will reuse ${baseApplicationId} for Firebase-enabled features.")
+}
+
+def keystorePropertiesFile = rootProject.file("keystore.properties")
+def keystoreProperties = new Properties()
+if (keystorePropertiesFile.exists()) {
+    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+}
+
 android {
-    namespace = "com.ajithsuryathati.shifttracker"
+    namespace = baseApplicationId
     compileSdk = rootProject.ext.compileSdkVersion
+    signingConfigs {
+        release {
+            if (keystorePropertiesFile.exists()) {
+                storeFile file(keystoreProperties['storeFile'])
+                storePassword keystoreProperties['storePassword']
+                keyAlias keystoreProperties['keyAlias']
+                keyPassword keystoreProperties['keyPassword']
+            }
+        }
+    }
     defaultConfig {
-        applicationId "com.ajithsuryathati.shifttracker"
+        applicationId baseApplicationId
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        versionCode 4
+        versionName "1.0.3"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -20,6 +78,7 @@ android {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            signingConfig keystorePropertiesFile.exists() ? signingConfigs.release : signingConfigs.debug
         }
     }
     flavorDimensions += "formFactor"
@@ -29,7 +88,9 @@ android {
         }
         tv {
             dimension "formFactor"
-            applicationIdSuffix ".tv"
+            if (useTvApplicationIdSuffix) {
+                applicationIdSuffix ".tv"
+            }
             versionNameSuffix "-tv"
         }
     }
@@ -42,6 +103,8 @@ repositories {
 }
 
 dependencies {
+    implementation platform('com.google.firebase:firebase-bom:34.10.0')
+    implementation 'com.google.firebase:firebase-messaging'
     implementation fileTree(include: ['*.jar'], dir: 'libs')
     implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
     implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
@@ -54,12 +117,3 @@ dependencies {
 }
 
 apply from: 'capacitor.build.gradle'
-
-try {
-    def servicesJSON = file('google-services.json')
-    if (servicesJSON.text) {
-        apply plugin: 'com.google.gms.google-services'
-    }
-} catch(Exception e) {
-    logger.info("google-services.json not found, google-services plugin not applied. Push Notifications won't work")
-}

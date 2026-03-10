@@ -11,8 +11,10 @@ const SHIFT_REMINDER_SOURCE = "shift-reminder";
 const DAY_BEFORE_REMINDER_SOURCE = "day-before-reminder";
 const HOLIDAY_LEAVE_REMINDER_SOURCE = "holiday-leave-reminder";
 const MAX_SCHEDULED_SHIFT_REMINDERS = 160;
-const SHIFT_REMINDER_CHANNEL_ID = "shift-reminders";
+export const SHIFT_REMINDER_CHANNEL_ID = "shift-reminders-v2";
+const LEGACY_SHIFT_REMINDER_CHANNEL_ID = "shift-reminders";
 const SHIFT_REMINDER_CHANNEL_NAME = "Shift reminders";
+const EXACT_TRIGGER_TOLERANCE_MS = 1_000;
 
 type ShiftReminderPreferences = Pick<
   UserPreferences,
@@ -30,12 +32,16 @@ export type ShiftReminderSyncResult =
   | { status: "unsupported" | "disabled" | "permission-denied" }
   | { status: "scheduled"; scheduledCount: number; exactAlarmDenied?: boolean };
 
+export type ShiftReminderTestResult =
+  | { status: "unsupported" | "permission-denied" }
+  | { status: "scheduled"; triggerAt: Date; exactAlarmDenied?: boolean };
+
 function clampReminderValue(value: number): number {
   if (!Number.isFinite(value)) {
     return 1;
   }
 
-  return Math.min(10080, Math.max(1, Math.round(value)));
+  return Math.min(10080, Math.max(0, Math.round(value)));
 }
 
 function getLeadMinutes(preferences: ShiftReminderPreferences): number {
@@ -86,6 +92,19 @@ function parseShiftStartDate(dateKey: string, startTime: string | null): Date | 
   return parseDateTime(dateKey, startTime);
 }
 
+function resolveTriggerAt(triggerAt: Date, now: Date): Date | null {
+  if (triggerAt > now) {
+    return triggerAt;
+  }
+
+  const isWithinExactTolerance = now.getTime() - triggerAt.getTime() <= EXACT_TRIGGER_TOLERANCE_MS;
+  if (!isWithinExactTolerance) {
+    return null;
+  }
+
+  return new Date(now.getTime() + 1_000);
+}
+
 function hashToNotificationId(input: string): number {
   let hash = 0;
 
@@ -118,6 +137,28 @@ async function clearPendingShiftReminders(uid: string): Promise<void> {
   }
 
   await LocalNotifications.cancel({ notifications: reminderIds });
+}
+
+export async function clearShiftReminderNotifications(uid: string): Promise<void> {
+  if (!isShiftReminderRuntimeSupported()) {
+    return;
+  }
+
+  await clearPendingShiftReminders(uid);
+}
+
+export async function openExactAlarmSettings(): Promise<boolean> {
+  if (!isAndroidNativePlatform()) {
+    return false;
+  }
+
+  try {
+    await LocalNotifications.changeExactNotificationSetting();
+    return true;
+  } catch (error) {
+    console.warn("Unable to open exact alarm settings.", error);
+    return false;
+  }
 }
 
 function buildLeadLabel(preferences: ShiftReminderPreferences): string {
@@ -155,8 +196,16 @@ function buildDayBeforeReminderBody(
   return `Hey ${name}, you have an entry tomorrow.`;
 }
 
-function buildHolidayLeaveReminderBody(entry: RotaEntry, displayName: string): string {
+function buildSameDayReminderBody(
+  entry: RotaEntry,
+  preferences: ShiftReminderPreferences,
+  displayName: string,
+): string {
   const name = normalizeDisplayName(displayName);
+
+  if (entry.type === "shift") {
+    return `Hey ${name}, you have shift today at ${formatTimeValue(entry.startTime, preferences.timeFormat)}.`;
+  }
 
   if (entry.type === "holiday") {
     return `Hey ${name}, it is holiday today. Enjoy your day.`;
@@ -176,6 +225,13 @@ function isAndroidNativePlatform(): boolean {
 async function ensureShiftReminderChannel(): Promise<void> {
   if (!isAndroidNativePlatform()) {
     return;
+  }
+
+  // Best-effort cleanup for older channel configs that may have been muted or misconfigured on device.
+  try {
+    await LocalNotifications.deleteChannel({ id: LEGACY_SHIFT_REMINDER_CHANNEL_ID });
+  } catch {
+    // Ignore: channel might not exist or could be protected by OS/device policy.
   }
 
   await LocalNotifications.createChannel({
@@ -245,18 +301,21 @@ export async function syncShiftReminderNotifications(
           }
 
           const triggerAt = new Date(shiftStartDate.getTime() - leadMinutes * 60 * 1000);
+          const nextTriggerAt = resolveTriggerAt(triggerAt, now);
 
-          if (triggerAt <= now) {
+          if (!nextTriggerAt) {
             return null;
           }
 
           return {
-            id: hashToNotificationId(`${uid}|lead|${entry.id}|${leadMinutes}`),
+            id: hashToNotificationId(
+              `${uid}|lead|${entry.id}|${entry.date}|${entry.startTime ?? ""}|${leadMinutes}`,
+            ),
             title: `${entry.title} in ${leadLabel}`,
             body: `${formatDateDayMonthYear(entry.date)} at ${formatTimeValue(entry.startTime, preferences.timeFormat)} • ${APP_NAME}`,
             sound: "default",
             channelId: SHIFT_REMINDER_CHANNEL_ID,
-            schedule: { at: triggerAt, allowWhileIdle: true },
+            schedule: { at: nextTriggerAt, allowWhileIdle: true },
             extra: {
               source: SHIFT_REMINDER_SOURCE,
               uid,
@@ -278,18 +337,21 @@ export async function syncShiftReminderNotifications(
 
           const reminderDateKey = toDateKey(addDays(parseDateKey(entry.date), -1));
           const triggerAt = parseDateTime(reminderDateKey, dayBeforeReminderTime);
+          const nextTriggerAt = triggerAt ? resolveTriggerAt(triggerAt, now) : null;
 
-          if (!triggerAt || triggerAt <= now) {
+          if (!nextTriggerAt) {
             return null;
           }
 
           return {
-            id: hashToNotificationId(`${uid}|day-before|${entry.id}|${dayBeforeReminderTime}`),
+            id: hashToNotificationId(
+              `${uid}|day-before|${entry.id}|${entry.date}|${entry.type}|${dayBeforeReminderTime}`,
+            ),
             title: `${entry.title} tomorrow`,
             body: buildDayBeforeReminderBody(entry, preferences, displayName),
             sound: "default",
             channelId: SHIFT_REMINDER_CHANNEL_ID,
-            schedule: { at: triggerAt, allowWhileIdle: true },
+            schedule: { at: nextTriggerAt, allowWhileIdle: true },
             extra: {
               source: DAY_BEFORE_REMINDER_SOURCE,
               uid,
@@ -304,23 +366,27 @@ export async function syncShiftReminderNotifications(
   const holidayLeaveNotifications = preferences.holidayLeaveReminderEnabled
     ? entries
         .map((entry) => {
-          if (entry.type !== "holiday" && entry.type !== "leave") {
+          const allowShiftSameDayReminder = entry.type === "shift" && !preferences.shiftReminderEnabled;
+          if (entry.type !== "holiday" && entry.type !== "leave" && !allowShiftSameDayReminder) {
             return null;
           }
 
           const triggerAt = parseDateTime(entry.date, holidayLeaveReminderTime);
+          const nextTriggerAt = triggerAt ? resolveTriggerAt(triggerAt, now) : null;
 
-          if (!triggerAt || triggerAt <= now) {
+          if (!nextTriggerAt) {
             return null;
           }
 
           return {
-            id: hashToNotificationId(`${uid}|holiday-leave|${entry.id}|${holidayLeaveReminderTime}`),
-            title: entry.type === "holiday" ? "Holiday today" : "Leave today",
-            body: buildHolidayLeaveReminderBody(entry, displayName),
+            id: hashToNotificationId(
+              `${uid}|holiday-leave|${entry.id}|${entry.date}|${entry.type}|${holidayLeaveReminderTime}`,
+            ),
+            title: entry.type === "holiday" ? "Holiday today" : entry.type === "leave" ? "Leave today" : "Shift today",
+            body: buildSameDayReminderBody(entry, preferences, displayName),
             sound: "default",
             channelId: SHIFT_REMINDER_CHANNEL_ID,
-            schedule: { at: triggerAt, allowWhileIdle: true },
+            schedule: { at: nextTriggerAt, allowWhileIdle: true },
             extra: {
               source: HOLIDAY_LEAVE_REMINDER_SOURCE,
               uid,
@@ -345,6 +411,54 @@ export async function syncShiftReminderNotifications(
   return {
     status: "scheduled",
     scheduledCount: notifications.length,
+    exactAlarmDenied,
+  };
+}
+
+export async function scheduleShiftReminderTestNotification(displayName: string): Promise<ShiftReminderTestResult> {
+  if (!isShiftReminderRuntimeSupported()) {
+    return { status: "unsupported" };
+  }
+
+  const permissions = await LocalNotifications.checkPermissions();
+  const displayPermission =
+    permissions.display === "granted"
+      ? permissions.display
+      : (await LocalNotifications.requestPermissions()).display;
+
+  if (displayPermission !== "granted") {
+    return { status: "permission-denied" };
+  }
+
+  let exactAlarmDenied = false;
+  if (isAndroidNativePlatform()) {
+    const settings = await LocalNotifications.checkExactNotificationSetting();
+    exactAlarmDenied = settings.exact_alarm !== "granted";
+  }
+
+  await ensureShiftReminderChannel();
+
+  const triggerAt = new Date(Date.now() + 15_000);
+  await LocalNotifications.schedule({
+    notifications: [
+      {
+        id: hashToNotificationId(`test|${Date.now()}`),
+        title: "Shift reminder test",
+        body: `Hey ${normalizeDisplayName(displayName)}, this is a test notification from ShiftTracker.`,
+        sound: "default",
+        channelId: SHIFT_REMINDER_CHANNEL_ID,
+        schedule: { at: triggerAt, allowWhileIdle: true },
+        extra: {
+          source: SHIFT_REMINDER_SOURCE,
+          isTest: true,
+        },
+      },
+    ],
+  });
+
+  return {
+    status: "scheduled",
+    triggerAt,
     exactAlarmDenied,
   };
 }

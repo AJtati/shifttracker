@@ -30,7 +30,7 @@ service cloud.firestore {
     }
 
     function isValidShiftReminderValue(value) {
-      return value is int && value >= 1 && value <= 10080;
+      return value is int && value >= 0 && value <= 10080;
     }
 
     function isValidReminderTime(value) {
@@ -122,6 +122,16 @@ service cloud.firestore {
         allow create: if isOwner(userId) && isValidEntryPayload(request.resource.data);
         allow update: if isOwner(userId) && isValidEntryPayload(request.resource.data);
         allow delete: if isOwner(userId);
+      }
+
+      match /deviceTokens/{tokenId} {
+        allow read: if isOwner(userId);
+        allow create, update, delete: if isOwner(userId);
+      }
+
+      match /sentPushReminders/{reminderId} {
+        allow read: if isOwner(userId);
+        allow create, update, delete: if false;
       }
     }
   }

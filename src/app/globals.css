@@ -158,6 +158,18 @@ html.theme-dark .hover\:bg-slate-100:hover {
   background-color: #2a3443 !important;
 }
 
+html.theme-light .calendar-selected-entry {
+  box-shadow:
+    0 0 0 2px rgba(15, 23, 42, 0.95),
+    0 0 0 1px rgba(15, 23, 42, 0.6);
+}
+
+html.theme-dark .calendar-selected-entry {
+  box-shadow:
+    0 0 0 2px rgba(255, 255, 255, 0.8),
+    0 0 0 1px rgba(255, 255, 255, 0.25);
+}
+
 .app-shell-bg {
   min-height: 100vh;
 }
