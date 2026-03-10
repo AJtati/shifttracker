@@ -1,6 +1,8 @@
 package com.ajithsuryathati.shifttracker;
 
 import android.content.Intent;
+import android.content.pm.PackageInfo;
+import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Build;
 import android.provider.Settings;
@@ -16,6 +18,7 @@ import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 
 import java.util.LinkedHashSet;
+import java.util.Locale;
 import java.util.Set;
 
 @CapacitorPlugin(name = "FirebaseConfig")
@@ -70,11 +73,30 @@ public class FirebaseConfigPlugin extends Plugin {
     @PluginMethod
     public void isTvDevice(PluginCall call) {
         int uiModeType = getContext().getResources().getConfiguration().uiMode & Configuration.UI_MODE_TYPE_MASK;
-        boolean isTv = uiModeType == Configuration.UI_MODE_TYPE_TELEVISION;
+        PackageManager packageManager = getContext().getPackageManager();
+
+        boolean tvByUiMode = uiModeType == Configuration.UI_MODE_TYPE_TELEVISION;
+        boolean tvByFeature = packageManager.hasSystemFeature(PackageManager.FEATURE_TELEVISION)
+            || packageManager.hasSystemFeature(PackageManager.FEATURE_LEANBACK)
+            || packageManager.hasSystemFeature("amazon.hardware.fire_tv");
+        boolean tvByPackageName = getContext().getPackageName().toLowerCase(Locale.US).endsWith(".tv");
+        boolean tvByVersionName = hasTvVersionNameSuffix(packageManager);
+
+        boolean isTv = tvByUiMode || tvByFeature || tvByPackageName || tvByVersionName;
 
         JSObject result = new JSObject();
         result.put("tv", isTv);
         call.resolve(result);
+    }
+
+    private boolean hasTvVersionNameSuffix(PackageManager packageManager) {
+        try {
+            PackageInfo packageInfo = packageManager.getPackageInfo(getContext().getPackageName(), 0);
+            String versionName = packageInfo != null ? packageInfo.versionName : null;
+            return versionName != null && versionName.toLowerCase(Locale.US).endsWith("-tv");
+        } catch (Exception ignored) {
+            return false;
+        }
     }
 
     @PluginMethod

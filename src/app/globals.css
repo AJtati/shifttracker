@@ -297,6 +297,32 @@ html.theme-dark .auth-card-subtitle {
   color: #ced8e6;
 }
 
+.tv-login-layout .auth-card {
+  max-width: none;
+}
+
+html.theme-dark .tv-qr-panel .border-slate-200 {
+  border-color: #3a475c !important;
+}
+
+html.theme-dark .tv-qr-panel .bg-white\/90 {
+  background-color: rgba(18, 24, 34, 0.96) !important;
+}
+
+html.theme-dark .tv-qr-panel .bg-slate-50 {
+  background-color: #222c3a !important;
+}
+
+html.theme-dark .tv-qr-panel .text-slate-900 {
+  color: #f4f8ff !important;
+}
+
+html.theme-dark .tv-qr-panel .text-slate-700,
+html.theme-dark .tv-qr-panel .text-slate-600,
+html.theme-dark .tv-qr-panel .text-slate-500 {
+  color: #c8d3e2 !important;
+}
+
 .landing-page-bg {
   min-height: 100vh;
 }

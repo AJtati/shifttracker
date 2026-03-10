@@ -5,6 +5,7 @@ import {
   onAuthStateChanged,
   sendEmailVerification,
   sendPasswordResetEmail,
+  signInWithCustomToken,
   signInWithEmailAndPassword,
   signOut,
   updateProfile,
@@ -97,6 +98,12 @@ export async function logIn(email: string, password: string): Promise<User> {
     throw new Error("Please verify your email first. We sent a new verification email.");
   }
 
+  return credential.user;
+}
+
+export async function logInWithCustomToken(customToken: string): Promise<User> {
+  const authClient = getAuthClient();
+  const credential = await signInWithCustomToken(authClient, customToken);
   return credential.user;
 }
 

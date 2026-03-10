@@ -1,9 +1,10 @@
-import { Capacitor, registerPlugin } from "@capacitor/core";
+import { Capacitor } from "@capacitor/core";
 import { PushNotifications, PushNotificationSchema } from "@capacitor/push-notifications";
 import { collection, doc, getDocs, limit, orderBy, query, serverTimestamp, setDoc, Timestamp } from "firebase/firestore";
 
 import { db } from "@/services/firebase/client";
 import { runFirestoreRead, runFirestoreWrite } from "@/services/firebase/request";
+import { FirebaseConfig } from "@/services/native/firebaseConfigPlugin";
 
 const PUSH_TOKEN_STORAGE_KEY = "shifttracker:v1:pushToken";
 const PUSH_REGISTRATION_TIMEOUT_MS = 15_000;
@@ -14,15 +15,6 @@ type PushRegistrationStatus =
   | "permission-denied"
   | "registration-failed"
   | "runtime-not-configured";
-
-interface FirebaseConfigPlugin {
-  isPushRuntimeConfigured(): Promise<{ configured: boolean }>;
-  isTvDevice(): Promise<{ tv: boolean }>;
-  openAppNotificationSettings(): Promise<{ opened: boolean }>;
-  openNotificationChannelSettings(options: { channelId: string }): Promise<{ opened: boolean }>;
-}
-
-const FirebaseConfig = registerPlugin<FirebaseConfigPlugin>("FirebaseConfig");
 
 interface StoredPushToken {
   uid: string;

@@ -36,9 +36,11 @@ export function PublicHeader() {
             </Link>
           </nav>
           <div className="md:hidden">
-            <Link href="/login" className="public-login-link text-sm font-semibold">
-              Login
-            </Link>
+            <div className="flex items-center gap-3">
+              <Link href="/login" className="public-login-link text-sm font-semibold">
+                Login
+              </Link>
+            </div>
           </div>
         </>
       )}
