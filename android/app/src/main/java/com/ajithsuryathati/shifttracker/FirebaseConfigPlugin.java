@@ -5,6 +5,9 @@ import android.net.Uri;
 import android.os.Build;
 import android.provider.Settings;
 import android.content.res.Configuration;
+import android.text.TextUtils;
+
+import com.google.firebase.FirebaseApp;
 
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
@@ -12,26 +15,56 @@ import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 
+import java.util.LinkedHashSet;
+import java.util.Set;
+
 @CapacitorPlugin(name = "FirebaseConfig")
 public class FirebaseConfigPlugin extends Plugin {
 
     @PluginMethod
     public void isPushRuntimeConfigured(PluginCall call) {
-        int googleAppIdResId = getContext().getResources().getIdentifier(
-            "google_app_id",
-            "string",
-            getContext().getPackageName()
-        );
-
-        boolean configured = false;
-        if (googleAppIdResId != 0) {
-            String googleAppId = getContext().getString(googleAppIdResId);
-            configured = googleAppId != null && !googleAppId.trim().isEmpty();
-        }
+        boolean configured = isFirebaseAppInitialized() || hasGoogleAppIdResource();
 
         JSObject result = new JSObject();
         result.put("configured", configured);
         call.resolve(result);
+    }
+
+    private boolean isFirebaseAppInitialized() {
+        try {
+            if (!FirebaseApp.getApps(getContext()).isEmpty()) {
+                return true;
+            }
+
+            return FirebaseApp.initializeApp(getContext()) != null;
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
+    private boolean hasGoogleAppIdResource() {
+        Set<String> packageNames = new LinkedHashSet<>();
+        packageNames.add(getContext().getPackageName());
+        packageNames.add(getContext().getApplicationContext().getPackageName());
+        packageNames.add(getContext().getApplicationInfo().packageName);
+
+        for (String packageName : packageNames) {
+            if (TextUtils.isEmpty(packageName)) {
+                continue;
+            }
+
+            int resourceId = getContext().getResources().getIdentifier("google_app_id", "string", packageName);
+            if (resourceId == 0) {
+                continue;
+            }
+
+            String googleAppId = getContext().getString(resourceId);
+            if (!TextUtils.isEmpty(googleAppId)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     @PluginMethod

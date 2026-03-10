@@ -937,6 +937,9 @@ async function dispatchReminder(
       notification: {
         channelId: ANDROID_REMINDER_CHANNEL_ID,
         sound: "default",
+        priority: "max",
+        visibility: "public",
+        defaultVibrateTimings: true,
       },
     },
     apns: {

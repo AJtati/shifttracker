@@ -158,7 +158,11 @@ export function isPushNotificationRuntimeSupported(): boolean {
 }
 
 function isAndroidFirebaseConfigPluginAvailable(): boolean {
-  return Capacitor.isNativePlatform() && Capacitor.getPlatform() === "android";
+  return (
+    Capacitor.isNativePlatform() &&
+    Capacitor.getPlatform() === "android" &&
+    Capacitor.isPluginAvailable("FirebaseConfig")
+  );
 }
 
 async function isNativePushRuntimeConfigured(): Promise<boolean> {
@@ -170,12 +174,17 @@ async function isNativePushRuntimeConfigured(): Promise<boolean> {
     return true;
   }
 
+  if (!isAndroidFirebaseConfigPluginAvailable()) {
+    console.warn("Android FirebaseConfig plugin is unavailable. Continuing with push registration.");
+    return true;
+  }
+
   try {
     const result = await FirebaseConfig.isPushRuntimeConfigured();
     return result.configured === true;
   } catch (error) {
-    console.warn("Unable to confirm Android push runtime configuration.", error);
-    return false;
+    console.warn("Unable to confirm Android push runtime configuration. Continuing with registration.", error);
+    return true;
   }
 }
 
