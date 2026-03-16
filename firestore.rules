@@ -62,6 +62,9 @@ service cloud.firestore {
           'shiftReminderEnabled',
           'shiftReminderValue',
           'shiftReminderUnit',
+          'shiftEndReminderEnabled',
+          'shiftEndReminderValue',
+          'shiftEndReminderUnit',
           'dayBeforeReminderEnabled',
           'dayBeforeReminderTime',
           'holidayLeaveReminderEnabled',
@@ -80,6 +83,9 @@ service cloud.firestore {
         (!data.keys().hasAny(['shiftReminderEnabled']) || data.shiftReminderEnabled is bool) &&
         (!data.keys().hasAny(['shiftReminderValue']) || isValidShiftReminderValue(data.shiftReminderValue)) &&
         (!data.keys().hasAny(['shiftReminderUnit']) || isValidShiftReminderUnit(data.shiftReminderUnit)) &&
+        (!data.keys().hasAny(['shiftEndReminderEnabled']) || data.shiftEndReminderEnabled is bool) &&
+        (!data.keys().hasAny(['shiftEndReminderValue']) || isValidShiftReminderValue(data.shiftEndReminderValue)) &&
+        (!data.keys().hasAny(['shiftEndReminderUnit']) || isValidShiftReminderUnit(data.shiftEndReminderUnit)) &&
         (!data.keys().hasAny(['dayBeforeReminderEnabled']) || data.dayBeforeReminderEnabled is bool) &&
         (!data.keys().hasAny(['dayBeforeReminderTime']) || isValidReminderTime(data.dayBeforeReminderTime)) &&
         (!data.keys().hasAny(['holidayLeaveReminderEnabled']) || data.holidayLeaveReminderEnabled is bool) &&

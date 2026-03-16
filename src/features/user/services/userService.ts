@@ -44,6 +44,7 @@ function normalizePreferences(preferences: UserPreferences): UserPreferences {
     ...preferences,
     timezone: preferences.timezone.trim() || DEFAULT_PREFERENCES.timezone,
     shiftReminderValue: normalizeShiftReminderValue(preferences.shiftReminderValue),
+    shiftEndReminderValue: normalizeShiftReminderValue(preferences.shiftEndReminderValue),
     dayBeforeReminderTime: normalizeReminderTime(
       preferences.dayBeforeReminderTime,
       DEFAULT_PREFERENCES.dayBeforeReminderTime,
@@ -80,6 +81,9 @@ function buildProfile(input: CreateUserProfileInput): UserProfile {
     shiftReminderEnabled: DEFAULT_PREFERENCES.shiftReminderEnabled,
     shiftReminderValue: DEFAULT_PREFERENCES.shiftReminderValue,
     shiftReminderUnit: DEFAULT_PREFERENCES.shiftReminderUnit,
+    shiftEndReminderEnabled: DEFAULT_PREFERENCES.shiftEndReminderEnabled,
+    shiftEndReminderValue: DEFAULT_PREFERENCES.shiftEndReminderValue,
+    shiftEndReminderUnit: DEFAULT_PREFERENCES.shiftEndReminderUnit,
     dayBeforeReminderEnabled: DEFAULT_PREFERENCES.dayBeforeReminderEnabled,
     dayBeforeReminderTime: DEFAULT_PREFERENCES.dayBeforeReminderTime,
     holidayLeaveReminderEnabled: DEFAULT_PREFERENCES.holidayLeaveReminderEnabled,
@@ -104,6 +108,9 @@ function buildFallbackProfile(uid: string): UserProfile {
     shiftReminderEnabled: DEFAULT_PREFERENCES.shiftReminderEnabled,
     shiftReminderValue: DEFAULT_PREFERENCES.shiftReminderValue,
     shiftReminderUnit: DEFAULT_PREFERENCES.shiftReminderUnit,
+    shiftEndReminderEnabled: DEFAULT_PREFERENCES.shiftEndReminderEnabled,
+    shiftEndReminderValue: DEFAULT_PREFERENCES.shiftEndReminderValue,
+    shiftEndReminderUnit: DEFAULT_PREFERENCES.shiftEndReminderUnit,
     dayBeforeReminderEnabled: DEFAULT_PREFERENCES.dayBeforeReminderEnabled,
     dayBeforeReminderTime: DEFAULT_PREFERENCES.dayBeforeReminderTime,
     holidayLeaveReminderEnabled: DEFAULT_PREFERENCES.holidayLeaveReminderEnabled,
@@ -135,6 +142,12 @@ function toUserProfile(uid: string, data: Record<string, unknown>): UserProfile 
         : DEFAULT_PREFERENCES.shiftReminderEnabled,
     shiftReminderValue: normalizeShiftReminderValue(data.shiftReminderValue),
     shiftReminderUnit: data.shiftReminderUnit === "hours" ? "hours" : "minutes",
+    shiftEndReminderEnabled:
+      typeof data.shiftEndReminderEnabled === "boolean"
+        ? data.shiftEndReminderEnabled
+        : DEFAULT_PREFERENCES.shiftEndReminderEnabled,
+    shiftEndReminderValue: normalizeShiftReminderValue(data.shiftEndReminderValue),
+    shiftEndReminderUnit: data.shiftEndReminderUnit === "hours" ? "hours" : "minutes",
     dayBeforeReminderEnabled:
       typeof data.dayBeforeReminderEnabled === "boolean"
         ? data.dayBeforeReminderEnabled

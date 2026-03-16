@@ -18,6 +18,9 @@ export interface UserProfile {
   shiftReminderEnabled: boolean;
   shiftReminderValue: number;
   shiftReminderUnit: ShiftReminderUnit;
+  shiftEndReminderEnabled: boolean;
+  shiftEndReminderValue: number;
+  shiftEndReminderUnit: ShiftReminderUnit;
   dayBeforeReminderEnabled: boolean;
   dayBeforeReminderTime: string;
   holidayLeaveReminderEnabled: boolean;
@@ -33,6 +36,9 @@ export interface UserPreferences {
   shiftReminderEnabled: boolean;
   shiftReminderValue: number;
   shiftReminderUnit: ShiftReminderUnit;
+  shiftEndReminderEnabled: boolean;
+  shiftEndReminderValue: number;
+  shiftEndReminderUnit: ShiftReminderUnit;
   dayBeforeReminderEnabled: boolean;
   dayBeforeReminderTime: string;
   holidayLeaveReminderEnabled: boolean;

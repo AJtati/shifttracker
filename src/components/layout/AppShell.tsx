@@ -149,6 +149,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         shiftReminderEnabled: profile.shiftReminderEnabled,
         shiftReminderValue: profile.shiftReminderValue,
         shiftReminderUnit: profile.shiftReminderUnit,
+        shiftEndReminderEnabled: profile.shiftEndReminderEnabled,
+        shiftEndReminderValue: profile.shiftEndReminderValue,
+        shiftEndReminderUnit: profile.shiftEndReminderUnit,
         dayBeforeReminderEnabled: profile.dayBeforeReminderEnabled,
         dayBeforeReminderTime: profile.dayBeforeReminderTime,
         holidayLeaveReminderEnabled: profile.holidayLeaveReminderEnabled,
@@ -157,7 +160,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       };
 
       const hasReminderEnabled =
-        profile.shiftReminderEnabled || profile.dayBeforeReminderEnabled || profile.holidayLeaveReminderEnabled;
+        profile.shiftReminderEnabled ||
+        profile.shiftEndReminderEnabled ||
+        profile.dayBeforeReminderEnabled ||
+        profile.holidayLeaveReminderEnabled;
 
       if (!hasReminderEnabled) {
         const result = await syncShiftReminderNotifications(user.uid, [], reminderPreferences, displayName);
@@ -286,8 +292,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       if (status === "runtime-not-configured" && lastPushRegistrationWarningRef.current !== "runtime-not-configured") {
         setNotificationTransport("local");
         localRemindersClearedForPushRef.current = false;
+        const nativePlatform = Capacitor.getPlatform();
+        const message =
+          nativePlatform === "android"
+            ? "Push notifications are not configured in this Android build. Add google-services.json and rebuild."
+            : "Push notifications are unavailable in this iOS signed build. Use an Apple Developer Program team with Push Notifications enabled, then rebuild.";
         pushToast(
-          "Push notifications are not configured in this Android build. Add google-services.json and rebuild.",
+          message,
           "info",
         );
         lastPushRegistrationWarningRef.current = "runtime-not-configured";
@@ -407,7 +418,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     }
 
     const hasReminderEnabled =
-      profile.shiftReminderEnabled || profile.dayBeforeReminderEnabled || profile.holidayLeaveReminderEnabled;
+      profile.shiftReminderEnabled ||
+      profile.shiftEndReminderEnabled ||
+      profile.dayBeforeReminderEnabled ||
+      profile.holidayLeaveReminderEnabled;
 
     if (!hasReminderEnabled) {
       queueShiftReminderSync([]);

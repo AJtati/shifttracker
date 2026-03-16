@@ -36,6 +36,9 @@ const PROFILE_SYNC_FIELDS = [
   "shiftReminderEnabled",
   "shiftReminderValue",
   "shiftReminderUnit",
+  "shiftEndReminderEnabled",
+  "shiftEndReminderValue",
+  "shiftEndReminderUnit",
   "dayBeforeReminderEnabled",
   "dayBeforeReminderTime",
   "holidayLeaveReminderEnabled",
@@ -45,7 +48,7 @@ const PROFILE_SYNC_FIELDS = [
 type TimeFormat = "12h" | "24h";
 type ShiftReminderUnit = "minutes" | "hours";
 type EntryType = "shift" | "leave" | "holiday" | "off";
-type ReminderSource = "shift-reminder" | "day-before-reminder" | "holiday-leave-reminder";
+type ReminderSource = "shift-reminder" | "shift-end-reminder" | "day-before-reminder" | "holiday-leave-reminder";
 
 interface UserProfile {
   uid: string;
@@ -55,6 +58,9 @@ interface UserProfile {
   shiftReminderEnabled: boolean;
   shiftReminderValue: number;
   shiftReminderUnit: ShiftReminderUnit;
+  shiftEndReminderEnabled: boolean;
+  shiftEndReminderValue: number;
+  shiftEndReminderUnit: ShiftReminderUnit;
   dayBeforeReminderEnabled: boolean;
   dayBeforeReminderTime: string;
   holidayLeaveReminderEnabled: boolean;
@@ -67,6 +73,7 @@ interface EntryRecord {
   type: EntryType;
   title: string;
   startTime: string | null;
+  endTime: string | null;
   updatedAtMillis: number;
 }
 
@@ -141,7 +148,12 @@ function isEntryType(value: unknown): value is EntryType {
 }
 
 function isReminderSource(value: unknown): value is ReminderSource {
-  return value === "shift-reminder" || value === "day-before-reminder" || value === "holiday-leave-reminder";
+  return (
+    value === "shift-reminder" ||
+    value === "shift-end-reminder" ||
+    value === "day-before-reminder" ||
+    value === "holiday-leave-reminder"
+  );
 }
 
 function toDateKey(date: DateTime): string {
@@ -185,6 +197,11 @@ function clampShiftReminderValue(value: unknown): number {
 function getLeadMinutes(profile: UserProfile): number {
   const value = clampShiftReminderValue(profile.shiftReminderValue);
   return profile.shiftReminderUnit === "hours" ? value * 60 : value;
+}
+
+function getShiftEndLeadMinutes(profile: UserProfile): number {
+  const value = clampShiftReminderValue(profile.shiftEndReminderValue);
+  return profile.shiftEndReminderUnit === "hours" ? value * 60 : value;
 }
 
 function normalizeDisplayName(fullName: string): string {
@@ -330,6 +347,9 @@ function parseUserProfile(uid: string, data: FirebaseFirestore.DocumentData): Us
     shiftReminderEnabled: data.shiftReminderEnabled === true,
     shiftReminderValue: clampShiftReminderValue(data.shiftReminderValue),
     shiftReminderUnit: data.shiftReminderUnit === "hours" ? "hours" : "minutes",
+    shiftEndReminderEnabled: data.shiftEndReminderEnabled === true,
+    shiftEndReminderValue: clampShiftReminderValue(data.shiftEndReminderValue),
+    shiftEndReminderUnit: data.shiftEndReminderUnit === "hours" ? "hours" : "minutes",
     dayBeforeReminderEnabled: data.dayBeforeReminderEnabled === true,
     dayBeforeReminderTime: isTimeValue(data.dayBeforeReminderTime) ? data.dayBeforeReminderTime : "21:00",
     holidayLeaveReminderEnabled: data.holidayLeaveReminderEnabled === true,
@@ -348,6 +368,7 @@ function parseEntry(entryId: string, data: FirebaseFirestore.DocumentData): Entr
     type: data.type,
     title: typeof data.title === "string" && data.title.trim().length > 0 ? data.title.trim() : "Shift entry",
     startTime: isTimeValue(data.startTime) ? data.startTime : null,
+    endTime: isTimeValue(data.endTime) ? data.endTime : null,
     updatedAtMillis: toUpdatedAtMillis(data.updatedAt),
   };
 }
@@ -422,6 +443,12 @@ function buildLeadLabel(profile: UserProfile): string {
   return `${value} ${value === 1 ? unit : `${unit}s`}`;
 }
 
+function buildShiftEndLeadLabel(profile: UserProfile): string {
+  const value = clampShiftReminderValue(profile.shiftEndReminderValue);
+  const unit = profile.shiftEndReminderUnit === "hours" ? "hour" : "minute";
+  return `${value} ${value === 1 ? unit : `${unit}s`}`;
+}
+
 function buildDayBeforeBody(entry: EntryRecord, profile: UserProfile, displayName: string): string {
   const name = normalizeDisplayName(displayName);
 
@@ -467,6 +494,8 @@ function buildScheduledRemindersForUser(
   const reminders: DueReminder[] = [];
   const leadMinutes = getLeadMinutes(profile);
   const leadLabel = buildLeadLabel(profile);
+  const shiftEndLeadMinutes = getShiftEndLeadMinutes(profile);
+  const shiftEndLeadLabel = buildShiftEndLeadLabel(profile);
 
   for (const entry of entries) {
     if (profile.shiftReminderEnabled && entry.type === "shift") {
@@ -496,6 +525,41 @@ function buildScheduledRemindersForUser(
             data: {
               uid: profile.uid,
               source: "shift-reminder",
+              entryId: entry.id,
+              entryDate: entry.date,
+            },
+          });
+        }
+      }
+    }
+
+    if (profile.shiftEndReminderEnabled && entry.type === "shift") {
+      const shiftEnd = parseDateTime(entry.date, entry.endTime, profile.timezone);
+
+      if (shiftEnd) {
+        const triggerAt = shiftEnd.minus({ minutes: shiftEndLeadMinutes });
+
+        if (shouldScheduleTrigger(triggerAt, nowLocal)) {
+          const triggerAtUtcIso = triggerAt.toUTC().toISO() ?? triggerAt.toUTC().toMillis().toString();
+          const reminderId = buildReminderId(
+            profile.uid,
+            "shift-end-reminder",
+            entry.id,
+            triggerAtUtcIso,
+            String(shiftEndLeadMinutes),
+          );
+
+          reminders.push({
+            id: reminderId,
+            source: "shift-end-reminder",
+            entryId: entry.id,
+            entryDate: entry.date,
+            triggerAtUtc: triggerAt.toUTC(),
+            title: `${entry.title} ends in ${shiftEndLeadLabel}`,
+            body: `${formatDateDayMonthYear(entry.date)} at ${formatTimeValue(entry.endTime, profile.timeFormat)} • ${APP_NAME}`,
+            data: {
+              uid: profile.uid,
+              source: "shift-end-reminder",
               entryId: entry.id,
               entryDate: entry.date,
             },
@@ -731,7 +795,10 @@ async function syncUserReminderSchedule(uid: string, reason: string): Promise<Sy
 
   const profile = parseUserProfile(uid, userSnapshot.data() ?? {});
   const remindersEnabled =
-    profile.shiftReminderEnabled || profile.dayBeforeReminderEnabled || profile.holidayLeaveReminderEnabled;
+    profile.shiftReminderEnabled ||
+    profile.shiftEndReminderEnabled ||
+    profile.dayBeforeReminderEnabled ||
+    profile.holidayLeaveReminderEnabled;
   const activeTokens = await getActiveDeviceTokens(uid);
   const hasActiveTokens = activeTokens.length > 0;
 

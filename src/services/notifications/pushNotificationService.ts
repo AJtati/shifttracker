@@ -31,6 +31,7 @@ let activeUid: string | null = null;
 let pushNotificationReceivedHandler: ((notification: PushNotificationSchema) => void) | null = null;
 let pendingPushRegistrationResolver: ((status: PushRegistrationStatus) => void) | null = null;
 let pendingPushRegistrationTimeoutId: ReturnType<typeof setTimeout> | null = null;
+let lastPushRegistrationErrorMessage: string | null = null;
 
 function getDbClient() {
   if (!db) {
@@ -109,6 +110,51 @@ function toDateOrNull(value: unknown): Date | null {
   }
 
   return null;
+}
+
+function toErrorMessage(error: unknown): string | null {
+  if (typeof error === "string") {
+    return error;
+  }
+
+  if (!error || typeof error !== "object") {
+    return null;
+  }
+
+  const directMessage = (error as { message?: unknown }).message;
+  if (typeof directMessage === "string") {
+    return directMessage;
+  }
+
+  const nestedError = (error as { error?: unknown }).error;
+  if (typeof nestedError === "string") {
+    return nestedError;
+  }
+
+  if (!nestedError || typeof nestedError !== "object") {
+    return null;
+  }
+
+  const nestedMessage = (nestedError as { message?: unknown }).message;
+  if (typeof nestedMessage === "string") {
+    return nestedMessage;
+  }
+
+  const nestedNestedError = (nestedError as { error?: unknown }).error;
+  return typeof nestedNestedError === "string" ? nestedNestedError : null;
+}
+
+function isIosPushRuntimeConfigurationError(errorMessage: string | null): boolean {
+  if (!errorMessage) {
+    return false;
+  }
+
+  const normalized = errorMessage.toLowerCase();
+  return (
+    normalized.includes("aps-environment") ||
+    normalized.includes("not entitled") ||
+    (normalized.includes("simulator") && normalized.includes("remote notifications are not supported"))
+  );
 }
 
 function clearPendingPushRegistration(): void {
@@ -211,6 +257,8 @@ async function attachPushListeners(): Promise<void> {
   }
 
   await PushNotifications.addListener("registration", (token) => {
+    lastPushRegistrationErrorMessage = null;
+
     if (!activeUid) {
       return;
     }
@@ -226,6 +274,7 @@ async function attachPushListeners(): Promise<void> {
   });
 
   await PushNotifications.addListener("registrationError", (error) => {
+    lastPushRegistrationErrorMessage = toErrorMessage(error);
     console.warn("Push registration failed.", error);
     resolvePendingPushRegistration("registration-failed");
   });
@@ -243,6 +292,7 @@ export async function ensurePushNotificationRegistration(uid: string): Promise<P
   }
 
   const runtimeConfigured = await isNativePushRuntimeConfigured();
+  lastPushRegistrationErrorMessage = null;
 
   activeUid = uid;
 
@@ -270,10 +320,29 @@ export async function ensurePushNotificationRegistration(uid: string): Promise<P
 
     const registrationResultPromise = waitForPushRegistrationResult(runtimeConfigured);
     await PushNotifications.register();
-    return await registrationResultPromise;
+    const registrationStatus = await registrationResultPromise;
+
+    if (
+      registrationStatus === "registration-failed" &&
+      Capacitor.getPlatform() === "ios" &&
+      isIosPushRuntimeConfigurationError(lastPushRegistrationErrorMessage)
+    ) {
+      return "runtime-not-configured";
+    }
+
+    return registrationStatus;
   } catch (error) {
     console.warn("Push registration request failed.", error);
     clearPendingPushRegistration();
+
+    if (
+      runtimeConfigured &&
+      Capacitor.getPlatform() === "ios" &&
+      isIosPushRuntimeConfigurationError(toErrorMessage(error))
+    ) {
+      return "runtime-not-configured";
+    }
+
     return runtimeConfigured ? "registration-failed" : "runtime-not-configured";
   }
 }

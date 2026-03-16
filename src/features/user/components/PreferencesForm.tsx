@@ -21,6 +21,9 @@ export function PreferencesForm({ profile, isSaving, onSave }: PreferencesFormPr
     shiftReminderEnabled: profile.shiftReminderEnabled,
     shiftReminderValue: profile.shiftReminderValue,
     shiftReminderUnit: profile.shiftReminderUnit,
+    shiftEndReminderEnabled: profile.shiftEndReminderEnabled,
+    shiftEndReminderValue: profile.shiftEndReminderValue,
+    shiftEndReminderUnit: profile.shiftEndReminderUnit,
     dayBeforeReminderEnabled: profile.dayBeforeReminderEnabled,
     dayBeforeReminderTime: profile.dayBeforeReminderTime,
     holidayLeaveReminderEnabled: profile.holidayLeaveReminderEnabled,
@@ -28,6 +31,9 @@ export function PreferencesForm({ profile, isSaving, onSave }: PreferencesFormPr
   });
   const [shiftReminderValueInput, setShiftReminderValueInput] = useState<string>(
     String(profile.shiftReminderValue),
+  );
+  const [shiftEndReminderValueInput, setShiftEndReminderValueInput] = useState<string>(
+    String(profile.shiftEndReminderValue),
   );
 
   return (
@@ -257,6 +263,93 @@ export function PreferencesForm({ profile, isSaving, onSave }: PreferencesFormPr
                 className="h-11 min-w-0 w-full max-w-full border-0 px-3 text-sm font-semibold text-slate-700 outline-none transition disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
               />
             </div>
+          </label>
+        </div>
+      </div>
+
+      <div className="space-y-2 rounded-2xl border border-slate-200 p-4">
+        <p className="text-sm font-black text-slate-900">Shift ending reminder notifications</p>
+        <p className="text-xs font-semibold text-slate-500">
+          Native app only (Android phone/tablet/TV and iOS). Alerts trigger before each shift ends.
+        </p>
+
+        <div className="grid gap-4 sm:grid-cols-3">
+          <label className="space-y-1 text-sm font-semibold text-slate-700">
+            Status
+            <select
+              value={preferences.shiftEndReminderEnabled ? "on" : "off"}
+              onChange={(event) =>
+                setPreferences((current) => ({
+                  ...current,
+                  shiftEndReminderEnabled: event.target.value === "on",
+                }))
+              }
+              className="h-11 w-full rounded-xl border border-slate-200 px-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-blue-500"
+            >
+              <option value="off">Off</option>
+              <option value="on">On</option>
+            </select>
+          </label>
+
+          <label className="space-y-1 text-sm font-semibold text-slate-700">
+            Value
+            <input
+              type="number"
+              min={0}
+              max={10080}
+              value={shiftEndReminderValueInput}
+              disabled={!preferences.shiftEndReminderEnabled}
+              onChange={(event) => {
+                const rawValue = event.target.value;
+                if (rawValue === "") {
+                  setShiftEndReminderValueInput("");
+                  return;
+                }
+
+                const parsed = Number.parseInt(rawValue, 10);
+                if (!Number.isFinite(parsed) || parsed < 0) {
+                  return;
+                }
+
+                const normalized = Math.min(10080, parsed);
+                setShiftEndReminderValueInput(String(normalized));
+                setPreferences((current) => ({
+                  ...current,
+                  shiftEndReminderValue: normalized,
+                }));
+              }}
+              onBlur={() => {
+                if (shiftEndReminderValueInput !== "") {
+                  return;
+                }
+
+                const fallbackValue = Math.min(10080, Math.max(0, preferences.shiftEndReminderValue));
+                setShiftEndReminderValueInput(String(fallbackValue));
+                setPreferences((current) => ({
+                  ...current,
+                  shiftEndReminderValue: fallbackValue,
+                }));
+              }}
+              className="h-11 w-full rounded-xl border border-slate-200 px-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-blue-500 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+            />
+          </label>
+
+          <label className="space-y-1 text-sm font-semibold text-slate-700">
+            Unit
+            <select
+              value={preferences.shiftEndReminderUnit}
+              disabled={!preferences.shiftEndReminderEnabled}
+              onChange={(event) =>
+                setPreferences((current) => ({
+                  ...current,
+                  shiftEndReminderUnit: event.target.value as UserPreferences["shiftEndReminderUnit"],
+                }))
+              }
+              className="h-11 w-full rounded-xl border border-slate-200 px-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-blue-500 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+            >
+              <option value="minutes">Minutes</option>
+              <option value="hours">Hours</option>
+            </select>
           </label>
         </div>
       </div>

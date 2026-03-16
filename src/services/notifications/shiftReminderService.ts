@@ -8,6 +8,7 @@ import { APP_NAME } from "@/utils/constants";
 import { formatDateDayMonthYear, formatTimeValue, parseDateKey, toDateKey } from "@/utils/date";
 
 const SHIFT_REMINDER_SOURCE = "shift-reminder";
+const SHIFT_END_REMINDER_SOURCE = "shift-end-reminder";
 const DAY_BEFORE_REMINDER_SOURCE = "day-before-reminder";
 const HOLIDAY_LEAVE_REMINDER_SOURCE = "holiday-leave-reminder";
 const MAX_SCHEDULED_SHIFT_REMINDERS = 160;
@@ -21,6 +22,9 @@ type ShiftReminderPreferences = Pick<
   | "shiftReminderEnabled"
   | "shiftReminderUnit"
   | "shiftReminderValue"
+  | "shiftEndReminderEnabled"
+  | "shiftEndReminderUnit"
+  | "shiftEndReminderValue"
   | "dayBeforeReminderEnabled"
   | "dayBeforeReminderTime"
   | "holidayLeaveReminderEnabled"
@@ -44,9 +48,9 @@ function clampReminderValue(value: number): number {
   return Math.min(10080, Math.max(0, Math.round(value)));
 }
 
-function getLeadMinutes(preferences: ShiftReminderPreferences): number {
-  const normalizedValue = clampReminderValue(preferences.shiftReminderValue);
-  return preferences.shiftReminderUnit === "hours" ? normalizedValue * 60 : normalizedValue;
+function getLeadMinutes(value: number, unit: ShiftReminderPreferences["shiftReminderUnit"]): number {
+  const normalizedValue = clampReminderValue(value);
+  return unit === "hours" ? normalizedValue * 60 : normalizedValue;
 }
 
 function parseTimeValue(value: string | null): { hours: number; minutes: number } | null {
@@ -92,6 +96,10 @@ function parseShiftStartDate(dateKey: string, startTime: string | null): Date | 
   return parseDateTime(dateKey, startTime);
 }
 
+function parseShiftEndDate(dateKey: string, endTime: string | null): Date | null {
+  return parseDateTime(dateKey, endTime);
+}
+
 function resolveTriggerAt(triggerAt: Date, now: Date): Date | null {
   if (triggerAt > now) {
     return triggerAt;
@@ -118,6 +126,7 @@ function hashToNotificationId(input: string): number {
 function isManagedNotificationSource(source: unknown): boolean {
   return (
     source === SHIFT_REMINDER_SOURCE ||
+    source === SHIFT_END_REMINDER_SOURCE ||
     source === DAY_BEFORE_REMINDER_SOURCE ||
     source === HOLIDAY_LEAVE_REMINDER_SOURCE
   );
@@ -161,9 +170,9 @@ export async function openExactAlarmSettings(): Promise<boolean> {
   }
 }
 
-function buildLeadLabel(preferences: ShiftReminderPreferences): string {
-  const unitLabel = preferences.shiftReminderUnit === "hours" ? "hour" : "minute";
-  const normalizedValue = clampReminderValue(preferences.shiftReminderValue);
+function buildLeadLabel(value: number, unit: ShiftReminderPreferences["shiftReminderUnit"]): string {
+  const unitLabel = unit === "hours" ? "hour" : "minute";
+  const normalizedValue = clampReminderValue(value);
   const suffix = normalizedValue === 1 ? unitLabel : `${unitLabel}s`;
   return `${normalizedValue} ${suffix}`;
 }
@@ -256,6 +265,7 @@ export async function syncShiftReminderNotifications(
 
   if (
     !preferences.shiftReminderEnabled &&
+    !preferences.shiftEndReminderEnabled &&
     !preferences.dayBeforeReminderEnabled &&
     !preferences.holidayLeaveReminderEnabled
   ) {
@@ -282,8 +292,10 @@ export async function syncShiftReminderNotifications(
   await ensureShiftReminderChannel();
 
   const now = new Date();
-  const leadMinutes = getLeadMinutes(preferences);
-  const leadLabel = buildLeadLabel(preferences);
+  const leadMinutes = getLeadMinutes(preferences.shiftReminderValue, preferences.shiftReminderUnit);
+  const leadLabel = buildLeadLabel(preferences.shiftReminderValue, preferences.shiftReminderUnit);
+  const shiftEndLeadMinutes = getLeadMinutes(preferences.shiftEndReminderValue, preferences.shiftEndReminderUnit);
+  const shiftEndLeadLabel = buildLeadLabel(preferences.shiftEndReminderValue, preferences.shiftEndReminderUnit);
   const dayBeforeReminderTime = preferences.dayBeforeReminderTime;
   const holidayLeaveReminderTime = preferences.holidayLeaveReminderTime;
 
@@ -322,6 +334,47 @@ export async function syncShiftReminderNotifications(
               entryId: entry.id,
               date: entry.date,
               startTime: entry.startTime,
+            },
+          };
+        })
+        .filter((notification): notification is NonNullable<typeof notification> => Boolean(notification))
+    : [];
+
+  const shiftEndNotifications = preferences.shiftEndReminderEnabled
+    ? entries
+        .map((entry) => {
+          if (entry.type !== "shift") {
+            return null;
+          }
+
+          const shiftEndDate = parseShiftEndDate(entry.date, entry.endTime);
+
+          if (!shiftEndDate) {
+            return null;
+          }
+
+          const triggerAt = new Date(shiftEndDate.getTime() - shiftEndLeadMinutes * 60 * 1000);
+          const nextTriggerAt = resolveTriggerAt(triggerAt, now);
+
+          if (!nextTriggerAt) {
+            return null;
+          }
+
+          return {
+            id: hashToNotificationId(
+              `${uid}|end-lead|${entry.id}|${entry.date}|${entry.endTime ?? ""}|${shiftEndLeadMinutes}`,
+            ),
+            title: `${entry.title} ends in ${shiftEndLeadLabel}`,
+            body: `${formatDateDayMonthYear(entry.date)} at ${formatTimeValue(entry.endTime, preferences.timeFormat)} • ${APP_NAME}`,
+            sound: "default",
+            channelId: SHIFT_REMINDER_CHANNEL_ID,
+            schedule: { at: nextTriggerAt, allowWhileIdle: true },
+            extra: {
+              source: SHIFT_END_REMINDER_SOURCE,
+              uid,
+              entryId: entry.id,
+              date: entry.date,
+              endTime: entry.endTime,
             },
           };
         })
@@ -398,7 +451,7 @@ export async function syncShiftReminderNotifications(
         .filter((notification): notification is NonNullable<typeof notification> => Boolean(notification))
     : [];
 
-  const notifications = [...shiftLeadNotifications, ...dayBeforeNotifications, ...holidayLeaveNotifications]
+  const notifications = [...shiftLeadNotifications, ...shiftEndNotifications, ...dayBeforeNotifications, ...holidayLeaveNotifications]
     .sort((a, b) => (a.schedule.at?.getTime() ?? 0) - (b.schedule.at?.getTime() ?? 0))
     .slice(0, MAX_SCHEDULED_SHIFT_REMINDERS);
 

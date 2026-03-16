@@ -56,6 +56,9 @@ export default function ProfilePage() {
       shiftReminderEnabled: profile?.shiftReminderEnabled ?? DEFAULT_PREFERENCES.shiftReminderEnabled,
       shiftReminderValue: profile?.shiftReminderValue ?? DEFAULT_PREFERENCES.shiftReminderValue,
       shiftReminderUnit: profile?.shiftReminderUnit ?? DEFAULT_PREFERENCES.shiftReminderUnit,
+      shiftEndReminderEnabled: profile?.shiftEndReminderEnabled ?? DEFAULT_PREFERENCES.shiftEndReminderEnabled,
+      shiftEndReminderValue: profile?.shiftEndReminderValue ?? DEFAULT_PREFERENCES.shiftEndReminderValue,
+      shiftEndReminderUnit: profile?.shiftEndReminderUnit ?? DEFAULT_PREFERENCES.shiftEndReminderUnit,
       dayBeforeReminderEnabled: profile?.dayBeforeReminderEnabled ?? DEFAULT_PREFERENCES.dayBeforeReminderEnabled,
       dayBeforeReminderTime: profile?.dayBeforeReminderTime ?? DEFAULT_PREFERENCES.dayBeforeReminderTime,
       holidayLeaveReminderEnabled:
@@ -187,6 +190,16 @@ export default function ProfilePage() {
             <dt className="font-semibold text-slate-600">Day-before reminder</dt>
             <dd className="font-bold text-slate-800">
               {resolvedProfile.dayBeforeReminderEnabled ? resolvedProfile.dayBeforeReminderTime : "Off"}
+            </dd>
+          </div>
+          <div className="flex justify-between rounded-xl border border-slate-200 px-3 py-2">
+            <dt className="font-semibold text-slate-600">Shift ending reminder</dt>
+            <dd className="font-bold text-slate-800">
+              {resolvedProfile.shiftEndReminderEnabled
+                ? resolvedProfile.shiftEndReminderValue === 0
+                  ? "At shift end"
+                  : `${resolvedProfile.shiftEndReminderValue} ${resolvedProfile.shiftEndReminderUnit} before`
+                : "Off"}
             </dd>
           </div>
           <div className="flex justify-between rounded-xl border border-slate-200 px-3 py-2">
