@@ -39,6 +39,37 @@ export function formatMonthLabel(date: Date): string {
   return format(date, "MMMM yyyy");
 }
 
+export function isDateKeyInMonth(value: string, monthDate: Date): boolean {
+  const parsedDate = parseDateKey(value);
+  return parsedDate.getFullYear() === monthDate.getFullYear() && parsedDate.getMonth() === monthDate.getMonth();
+}
+
+export function resolveSelectedDateForMonth(
+  monthDate: Date,
+  currentSelectedDate: string,
+  entryDates: string[],
+  weekStartsOn: WeekStartsOn,
+  now: Date = new Date(),
+): string {
+  if (isDateKeyInMonthGrid(currentSelectedDate, monthDate, weekStartsOn)) {
+    return currentSelectedDate;
+  }
+
+  const firstEntryDate = [...entryDates]
+    .filter((entryDate) => isDateKeyInMonth(entryDate, monthDate))
+    .sort((left, right) => left.localeCompare(right))[0];
+  if (firstEntryDate) {
+    return firstEntryDate;
+  }
+
+  const todayKey = toDateKey(now);
+  if (isDateKeyInMonth(todayKey, monthDate)) {
+    return todayKey;
+  }
+
+  return toDateKey(startOfMonth(monthDate));
+}
+
 export function formatWeekLabel(weekStartDate: Date): string {
   const weekEndDate = addDays(weekStartDate, 6);
   return `${format(weekStartDate, "MMM d")} - ${format(weekEndDate, "MMM d")}`;
@@ -94,6 +125,18 @@ export function getMonthBounds(anchorDate: Date): { start: string; end: string }
   };
 }
 
+export function getMonthGridBounds(anchorDate: Date, weekStartsOn: WeekStartsOn): { start: string; end: string } {
+  const gridStart = startOfWeek(startOfMonth(anchorDate), {
+    weekStartsOn: weekStartsOnMap[weekStartsOn],
+  });
+  const gridEnd = addDays(gridStart, 41);
+
+  return {
+    start: toDateKey(gridStart),
+    end: toDateKey(gridEnd),
+  };
+}
+
 export function getWeekDays(anchorDate: Date, weekStartsOn: WeekStartsOn): string[] {
   const weekStart = startOfWeek(anchorDate, { weekStartsOn: weekStartsOnMap[weekStartsOn] });
 
@@ -114,6 +157,15 @@ export function buildMonthGrid(anchorDate: Date, weekStartsOn: WeekStartsOn): Da
   });
 
   return Array.from({ length: 42 }, (_, index) => addDays(startDate, index));
+}
+
+export function isDateKeyInMonthGrid(value: string, monthDate: Date, weekStartsOn: WeekStartsOn): boolean {
+  const parsedDate = parseDateKey(value);
+  const gridBounds = getMonthGridBounds(monthDate, weekStartsOn);
+  const gridStart = parseDateKey(gridBounds.start);
+  const gridEnd = parseDateKey(gridBounds.end);
+
+  return parsedDate >= gridStart && parsedDate <= gridEnd;
 }
 
 export function isDateToday(value: string): boolean {

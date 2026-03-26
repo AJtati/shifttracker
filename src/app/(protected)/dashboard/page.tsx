@@ -25,17 +25,18 @@ import {
 } from "@/features/entries/services/entryService";
 import { RotaEntry } from "@/types/entry";
 import { UserPreferences } from "@/types/user";
-import { DEFAULT_PREFERENCES } from "@/utils/constants";
+import { DEFAULT_PREFERENCES, ENTRY_TYPE_LABEL } from "@/utils/constants";
 import {
   formatDateDayMonthYear,
   formatDateLong,
   formatMonthLabel,
   formatTimeRange,
   formatWeekLabel,
-  getMonthBounds,
+  getMonthGridBounds,
   getWeekBounds,
   getWeekDays,
   parseDateKey,
+  resolveSelectedDateForMonth,
   shiftWeek,
   toDateKey,
 } from "@/utils/date";
@@ -77,7 +78,10 @@ export default function DashboardPage() {
     [profile?.weekStartsOn, weekAnchorDate],
   );
   const weekLabel = useMemo(() => formatWeekLabel(parseDateKey(weekBounds.start)), [weekBounds.start]);
-  const monthBounds = useMemo(() => getMonthBounds(monthAnchorDate), [monthAnchorDate]);
+  const monthBounds = useMemo(
+    () => getMonthGridBounds(monthAnchorDate, profile?.weekStartsOn ?? "monday"),
+    [monthAnchorDate, profile?.weekStartsOn],
+  );
   const listRange = useMemo(
     () => ({
       start: today,
@@ -136,6 +140,7 @@ export default function DashboardPage() {
       profile?.weekStartsOn,
     ],
   );
+  const todayCardHeading = todayEntry ? `Today's ${ENTRY_TYPE_LABEL[todayEntry.type]}` : "Today's Shift";
 
   useEffect(() => {
     if (!user) {
@@ -274,12 +279,17 @@ export default function DashboardPage() {
   }, [profile?.weekStartsOn, weekBounds.start]);
 
   useEffect(() => {
-    const now = new Date();
-    const defaultDate = isSameMonth(monthAnchorDate, now)
-      ? now
-      : new Date(monthAnchorDate.getFullYear(), monthAnchorDate.getMonth(), 1);
-    setSelectedMonthDate(toDateKey(defaultDate));
-  }, [monthAnchorDate]);
+    const resolvedDate = resolveSelectedDateForMonth(
+      monthAnchorDate,
+      selectedMonthDate,
+      monthEntries.map((entry) => entry.date),
+      profile?.weekStartsOn ?? "monday",
+    );
+
+    if (resolvedDate !== selectedMonthDate) {
+      setSelectedMonthDate(resolvedDate);
+    }
+  }, [monthAnchorDate, monthEntries, profile?.weekStartsOn, selectedMonthDate]);
 
   const handleScheduleViewChange = async (nextView: DashboardScheduleView) => {
     if (!user) {
@@ -352,12 +362,21 @@ export default function DashboardPage() {
 
         <div className="mt-5 grid gap-3 lg:grid-cols-2">
           <article className="rounded-2xl bg-white/12 p-4 backdrop-blur">
-            <p className="text-sm font-bold">Today&apos;s Shift</p>
+            <p className="text-sm font-bold">{todayCardHeading}</p>
             {todayEntry ? (
-              <>
-                <p className="mt-2 text-3xl font-black">{formatTimeRange(todayEntry.startTime, todayEntry.endTime, profile?.timeFormat ?? "24h")}</p>
-                <p className="text-sm font-semibold">{todayEntry.title}</p>
-              </>
+              todayEntry.type === "shift" ? (
+                <>
+                  <p className="mt-2 text-3xl font-black">
+                    {formatTimeRange(todayEntry.startTime, todayEntry.endTime, profile?.timeFormat ?? "24h")}
+                  </p>
+                  <p className="text-sm font-semibold">{todayEntry.title}</p>
+                </>
+              ) : (
+                <>
+                  <p className="mt-2 text-3xl font-black">{todayEntry.title || ENTRY_TYPE_LABEL[todayEntry.type]}</p>
+                  <p className="text-sm font-semibold">{ENTRY_TYPE_LABEL[todayEntry.type]} added for today</p>
+                </>
+              )
             ) : (
               <p className="mt-2 text-lg font-bold">No shift added yet</p>
             )}

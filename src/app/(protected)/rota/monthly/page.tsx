@@ -12,7 +12,15 @@ import { useAuth } from "@/features/auth/hooks/useAuth";
 import { getEntriesByMonth } from "@/features/entries/services/entryService";
 import { toFriendlyFirebaseMessage } from "@/services/firebase/errors";
 import { RotaEntry } from "@/types/entry";
-import { formatDateLong, formatMonthLabel, formatTimeRange, getMonthBounds, shiftMonth, toDateKey } from "@/utils/date";
+import {
+  formatDateLong,
+  formatMonthLabel,
+  formatTimeRange,
+  getMonthGridBounds,
+  resolveSelectedDateForMonth,
+  shiftMonth,
+  toDateKey,
+} from "@/utils/date";
 import { cn } from "@/utils/cn";
 
 export default function MonthlyCalendarPage() {
@@ -24,7 +32,8 @@ export default function MonthlyCalendarPage() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const monthBounds = useMemo(() => getMonthBounds(anchorDate), [anchorDate]);
+  const weekStartsOn = profile?.weekStartsOn ?? "monday";
+  const monthBounds = useMemo(() => getMonthGridBounds(anchorDate, weekStartsOn), [anchorDate, weekStartsOn]);
 
   const loadMonth = useCallback(async () => {
     if (!user) {
@@ -57,6 +66,19 @@ export default function MonthlyCalendarPage() {
     });
     return map;
   }, [entries]);
+
+  useEffect(() => {
+    const resolvedDate = resolveSelectedDateForMonth(
+      anchorDate,
+      selectedDate,
+      entries.map((entry) => entry.date),
+      weekStartsOn,
+    );
+
+    if (resolvedDate !== selectedDate) {
+      setSelectedDate(resolvedDate);
+    }
+  }, [anchorDate, entries, selectedDate, weekStartsOn]);
 
   const selectedEntry = entriesByDate.get(selectedDate);
 
@@ -139,7 +161,7 @@ export default function MonthlyCalendarPage() {
             monthDate={anchorDate}
             selectedDate={selectedDate}
             entriesByDate={entriesByDate}
-            weekStartsOn={profile?.weekStartsOn ?? "monday"}
+            weekStartsOn={weekStartsOn}
             timeFormat={profile?.timeFormat ?? "24h"}
             showCurrentWeekOnly={showCurrentWeekOnly}
             onSelectDate={setSelectedDate}

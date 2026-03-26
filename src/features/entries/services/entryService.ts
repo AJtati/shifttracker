@@ -551,7 +551,7 @@ export async function getEntriesForList(uid: string, filters: RotaEntryFilters =
 }
 
 export async function getTodayEntry(uid: string, today: string): Promise<RotaEntry | null> {
-  const entries = await getEntriesByRange(uid, today, today, { type: "shift" });
+  const entries = await getEntriesByRange(uid, today, today);
 
   if (entries.length === 0) {
     return null;
