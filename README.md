@@ -69,7 +69,7 @@ NEXT_PUBLIC_ENABLE_PUSH_REMINDERS=
 ```
 
 `NEXT_PUBLIC_APP_URL` should be your deployed app URL, for example `https://shiftracker.web.app`.
-`NEXT_PUBLIC_ENABLE_PUSH_REMINDERS` defaults to enabled. Set it to `false` to force free on-device local reminders only.
+`NEXT_PUBLIC_ENABLE_PUSH_REMINDERS` defaults to enabled. Android uses push reminders when available; iOS falls back to on-device local reminders unless you add the required Apple push entitlements/signing setup.
 
 3. Install and run:
 
@@ -157,6 +157,7 @@ Notification notes:
 - Android 13+ requires runtime notification permission (already handled in app code).
 - Android TV support depends on device/launcher behavior; install the `tv` APK on TV to receive app notifications there.
 - Push reminders are now event-driven via Firebase task queue functions (scheduled only when user preferences/entries/tokens change), instead of a global every-minute scanner.
+- iOS reminders currently use the local notification scheduler in the app build. If you want remote push on iOS, add Push Notifications capability/entitlements to the signed Xcode target first.
 
 ## Firestore Rules
 

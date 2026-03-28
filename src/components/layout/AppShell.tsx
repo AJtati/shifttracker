@@ -42,6 +42,10 @@ const NOTIFICATION_LOOKAHEAD_DAYS = 120;
 const REMINDER_SYNC_DEBOUNCE_MS = 300;
 const PUSH_REMINDER_TRANSPORT_ENABLED = process.env.NEXT_PUBLIC_ENABLE_PUSH_REMINDERS !== "false";
 
+function canUsePushReminderTransportOnCurrentPlatform(): boolean {
+  return Capacitor.getPlatform() === "android";
+}
+
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -61,7 +65,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   const displayName = profile?.fullName ?? user?.displayName ?? user?.email?.split("@")[0] ?? "User";
   const canUsePushReminderTransport =
-    PUSH_REMINDER_TRANSPORT_ENABLED && Boolean(user) && isPushNotificationRuntimeSupported();
+    PUSH_REMINDER_TRANSPORT_ENABLED &&
+    Boolean(user) &&
+    isPushNotificationRuntimeSupported() &&
+    canUsePushReminderTransportOnCurrentPlatform();
   const activeNotificationTransport: "local" | "push" = canUsePushReminderTransport
     ? notificationTransport
     : "local";
